@@ -1,0 +1,76 @@
+Proposed Solution
+The proposed solution introduces an advanced, AI-powered attendance system
+that leverages facial recognition technology to automate and secure the
+attendance process. By using a camera module installed in the classroom, the
+system captures images of students as they enter. These images are then,
+matched against a pre-stored database using facial recognition algorithms.
+When a match is found, the system automatically logs the student’s attendance,
+eliminating the necessity for manual marking and significantly reducing the
+chance of errors.
+AI Attendance Manager accurately marks attendance by verifying that only
+students who are physically present in the classroom are recorded as present,
+eliminating the risk of proxy attendance. Its implementation promises enhanced
+accuracy, real-time tracking, and a streamlined process that saves time for
+faculty and administrative staff. By automating attendance and improving data
+reliability, the system addresses common challenges in traditional methods and
+supports smarter and more efficient academic environment.
+
+The development phase of the application includes following steps:
+Step 0: Student Enrollment Phase
+Before the main attendance system can function, each student must go through
+a one-time enrollment process. During enrollment, the student stands in front
+of the camera while the system captures multiple images from different angles
+and poses. The system displays prompts such as:
+- "Look straight ahead"
+- "Look up"
+- "Look down" 
+- "Look left"
+- "Look right"
+- "Slight smile"
+- "Neutral expression"
+The camera captures images at 30 FPS during each prompt (approximately 3-5 
+seconds per pose), collecting 100+ high-quality images per student. These 
+images are automatically saved with the student's name and ID, converted to 
+grayscale, and added to the training dataset. This comprehensive enrollment 
+ensures robust face recognition across various angles and expressions.
+
+Step 1: Capturing Video Frames
+A camera is positioned at the classroom entrance to capture clear images of
+students' faces. It records video at 30 frames per second. These frames are
+extracted and used for further processing.
+
+Step 1: Capturing Video Frames
+A camera is positioned at the classroom entrance to capture clear images of
+students' faces. It records video at 30 frames per second. These frames are
+extracted and used for further processing.
+
+Step 2: Face Detection
+This phase includes face detection of the person which aids in locating and sizing
+the student faces in the collected image.
+Step 3: Image Pre-Processing
+Pre-processing is necessary to enhance the input image and raise the overall
+quality of the image.
+Step 4: Training Set
+The method involves comparing the faces that has to be recognized with the
+identical face in the trained dataset. The provided algorithm uses the training
+dataset to identify which group a person belongs to. It relies on this training data
+to perform facial recognition and make accurate classifications. The training
+dataset is built during the enrollment phase where each student provides
+multiple face samples from various angles and expressions.
+Step 5: Face Recognition
+The face recognition component plays a crucial role in the system. An automated
+way of recognizing and authenticating a person from photos and videos taken by
+the camera is face recognition.
+Step 6: Marking Attendance
+Attendance will only be recorded as present if a face from a particular registered
+folder matches. Once all present students have been marked, the remaining
+enrolled students who were not detected will be automatically recorded as
+absent.
+
+Hint: For this project, you are expected to create your own dataset using the
+enrollment phase described in Step 0. The system should be trained on six 
+different students by capturing over 100 images per student during their 
+enrollment session. The guided prompts ensure comprehensive coverage of
+facial angles and expressions. These images should be converted to grayscale 
+and saved with the respective student's name and ID. No pre-existing dataset 
+is provided for this task.
