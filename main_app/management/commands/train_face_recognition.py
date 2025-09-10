@@ -4,8 +4,15 @@ Usage: python manage.py train_face_recognition
 """
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from main_app.face_recognition_service import face_recognition_service
 from main_app.models import Student
+
+# Import face recognition service conditionally
+try:
+    from main_app.face_recognition_service import face_recognition_service
+    FACE_RECOGNITION_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    face_recognition_service = None
+    FACE_RECOGNITION_AVAILABLE = False
 
 class Command(BaseCommand):
     help = 'Train the face recognition model using enrolled student data'

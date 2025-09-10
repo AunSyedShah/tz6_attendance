@@ -19,10 +19,16 @@ urlpatterns = [
     path('api/process-frame/', views.process_camera_frame, name='process_camera_frame'),
     path('api/progress/<str:student_id>/', views.get_enrollment_progress, name='get_enrollment_progress'),
     
-    # Face Recognition API endpoints
+    # Face Recognition API endpoints (Legacy)
     path('api/train-model/', views.train_recognition_model, name='train_recognition_model'),
     path('api/model-status/', views.recognition_model_status, name='recognition_model_status'),
     path('api/recognize-frame/', views.process_frame_with_recognition, name='process_frame_with_recognition'),
+    
+    # Deep Learning API endpoints (New)
+    path('api/deep/train-model/', views.train_deep_model, name='train_deep_model'),
+    path('api/deep/model-status/', views.deep_model_status, name='deep_model_status'),
+    path('api/deep/recognize-frame/', views.process_frame_deep_recognition, name='process_frame_deep_recognition'),
+    path('api/deep/verify-installation/', views.verify_deep_installation, name='verify_deep_installation'),
     
     # Attendance Management
     path('attendance/', views.attendance_dashboard, name='attendance_dashboard'),

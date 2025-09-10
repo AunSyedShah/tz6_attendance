@@ -18,9 +18,17 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import HttpResponse
+from django.views.decorators.cache import cache_control
+
+# Simple favicon view
+@cache_control(max_age=60 * 60 * 24, immutable=True, public=True)  # cache for 24 hours
+def favicon_view(request):
+    return HttpResponse(status=204)  # No content
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('favicon.ico', favicon_view),
     path('', include('main_app.urls')),
 ]
 

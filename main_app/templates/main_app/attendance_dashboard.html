@@ -172,6 +172,69 @@
             </div>
         </div>
 
+        <!-- Deep Learning Model Status -->
+        <div class="col-md-6">
+            <div class="model-status" id="deepModelStatus">
+                <h5>
+                    <i class="fas fa-robot"></i>
+                    Deep Learning Model 
+                    <span class="badge badge-primary">NEW</span>
+                </h5>
+                
+                <div id="deepModelInfo">
+                    <p class="mb-2">
+                        <i class="fas fa-spinner fa-spin"></i> 
+                        Checking deep learning system...
+                    </p>
+                </div>
+                
+                <div class="mt-3">
+                    <button class="btn btn-primary" onclick="trainDeepModel()" id="trainDeepBtn" disabled>
+                        <i class="fas fa-brain"></i>
+                        Train Deep Model
+                    </button>
+                    <button class="btn btn-secondary ml-2" onclick="checkDeepStatus()" id="checkDeepBtn">
+                        <i class="fas fa-sync-alt"></i>
+                        Check Status
+                    </button>
+                    <button class="btn btn-outline-info ml-2" onclick="verifyInstallation()" id="verifyBtn">
+                        <i class="fas fa-shield-alt"></i>
+                        Verify Setup
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recognition Mode Selector -->
+        <div class="col-md-6">
+            <div class="model-status">
+                <h5>
+                    <i class="fas fa-exchange-alt"></i>
+                    Recognition Engine
+                </h5>
+                
+                <div class="form-group">
+                    <label for="recognitionMode">Active Recognition Mode:</label>
+                    <select class="form-control" id="recognitionMode" onchange="switchRecognitionMode()">
+                        <option value="legacy">Legacy Face Recognition (KNN)</option>
+                        <option value="deep" selected>Deep Learning (FaceNet)</option>
+                    </select>
+                </div>
+                
+                <div class="mt-3">
+                    <div class="alert alert-info">
+                        <strong>Deep Learning Benefits:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>Higher accuracy (95%+ vs 85%)</li>
+                            <li>Better low-light performance</li>
+                            <li>Handles pose variations</li>
+                            <li>More robust to aging</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Session Control -->
         <div class="col-md-6">
             <div class="session-control">
@@ -437,5 +500,226 @@ setInterval(function() {
     });
 }, 30000);
 {% endif %}
+
+// ============================================================================
+// DEEP LEARNING FUNCTIONS
+// ============================================================================
+
+function verifyInstallation() {
+    showLoading('Verifying deep learning installation...');
+    
+    fetch('/api/deep/verify-installation/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        
+        if (data.success) {
+            let status = data.installation_status;
+            let message = 'Deep Learning Installation Status:\n\n';
+            
+            Object.keys(status).forEach(lib => {
+                message += `${lib}: ${status[lib] ? '✓ Installed' : '✗ Missing'}\n`;
+            });
+            
+            message += '\nRecommendations:\n';
+            Object.keys(data.recommendations).forEach(lib => {
+                message += `${lib}: ${data.recommendations[lib]}\n`;
+            });
+            
+            alert(message);
+            
+            if (data.all_installed) {
+                checkDeepStatus();
+            }
+        } else {
+            alert('Installation check failed: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('Error: ' + error.message);
+    });
+}
+
+function checkDeepStatus() {
+    showLoading('Checking deep learning model status...');
+    
+    fetch('/api/deep/model-status/')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        updateDeepModelDisplay(data);
+    })
+    .catch(error => {
+        hideLoading();
+        console.error('Deep status check error:', error);
+        updateDeepModelDisplay({
+            success: false,
+            error: 'Connection failed',
+            model_ready: false
+        });
+    });
+}
+
+function updateDeepModelDisplay(data) {
+    const statusDiv = document.getElementById('deepModelStatus');
+    const infoDiv = document.getElementById('deepModelInfo');
+    const trainBtn = document.getElementById('trainDeepBtn');
+    
+    if (data.success && data.model_ready) {
+        statusDiv.className = 'model-status success';
+        
+        let stats = data.statistics;
+        infoDiv.innerHTML = `
+            <p class="mb-2">
+                <i class="fas fa-check-circle text-success"></i> 
+                Deep learning model is ready!
+            </p>
+            <ul class="mb-0">
+                <li>Students enrolled: ${stats.total_students}</li>
+                <li>Face embeddings: ${stats.total_embeddings}</li>
+                <li>Avg embeddings/student: ${stats.avg_embeddings_per_student}</li>
+                <li>Model: ${stats.model_used}</li>
+                <li>Recognition attempts (24h): ${stats.recognition_attempts_24h}</li>
+                <li>Successful recognitions (24h): ${stats.successful_recognitions_24h}</li>
+            </ul>
+        `;
+        
+        trainBtn.disabled = false;
+        trainBtn.innerHTML = '<i class="fas fa-brain"></i> Retrain Deep Model';
+        
+    } else if (data.success && !data.model_ready) {
+        statusDiv.className = 'model-status warning';
+        
+        let stats = data.statistics || {};
+        if (stats.total_students > 0) {
+            infoDiv.innerHTML = `
+                <p class="mb-2">
+                    <i class="fas fa-exclamation-triangle text-warning"></i> 
+                    Ready for deep learning training
+                </p>
+                <p class="mb-0">${stats.total_students} students enrolled</p>
+            `;
+            trainBtn.disabled = false;
+        } else {
+            infoDiv.innerHTML = `
+                <p class="mb-0">
+                    <i class="fas fa-info-circle text-info"></i> 
+                    No students enrolled yet for deep learning
+                </p>
+            `;
+            trainBtn.disabled = true;
+        }
+        
+        trainBtn.innerHTML = '<i class="fas fa-brain"></i> Train Deep Model';
+        
+    } else {
+        statusDiv.className = 'model-status error';
+        infoDiv.innerHTML = `
+            <p class="mb-0">
+                <i class="fas fa-times-circle text-danger"></i> 
+                Deep learning system not available: ${data.error || 'Unknown error'}
+            </p>
+        `;
+        trainBtn.disabled = true;
+    }
+}
+
+function trainDeepModel() {
+    if (!confirm('Train deep learning model for all enrolled students?\n\nThis may take several minutes.')) {
+        return;
+    }
+    
+    showLoading('Training deep learning model... This may take a few minutes.');
+    
+    fetch('/api/deep/train-model/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        
+        if (data.success) {
+            let message = 'Deep Learning Model Training Complete!\n\n';
+            message += `Students processed: ${data.results.students_processed}\n`;
+            message += `Students enrolled: ${data.results.students_enrolled}\n\n`;
+            
+            message += 'Training Details:\n';
+            data.results.training_details.forEach(detail => {
+                message += `• ${detail.student_name}: ${detail.successful_embeddings}/${detail.total_images} images (${detail.success_rate})\n`;
+            });
+            
+            if (data.results.final_stats) {
+                let stats = data.results.final_stats;
+                message += `\nFinal Statistics:\n`;
+                message += `• Total embeddings: ${stats.total_embeddings}\n`;
+                message += `• Average per student: ${stats.avg_embeddings_per_student}\n`;
+            }
+            
+            alert(message);
+            checkDeepStatus();
+        } else {
+            alert('Training failed: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('Error: ' + error.message);
+    });
+}
+
+function switchRecognitionMode() {
+    const mode = document.getElementById('recognitionMode').value;
+    
+    // Store preference (you can expand this to save to backend)
+    localStorage.setItem('recognitionMode', mode);
+    
+    // Update UI feedback
+    const info = mode === 'deep' ? 
+        'Switched to Deep Learning mode. Higher accuracy but requires model training.' :
+        'Switched to Legacy mode. Faster but lower accuracy.';
+    
+    // Show temporary notification
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-info alert-dismissible fade show';
+    notification.innerHTML = `
+        <strong>Recognition Mode Changed:</strong> ${info}
+        <button type="button" class="close" data-dismiss="alert">
+            <span>&times;</span>
+        </button>
+    `;
+    
+    const container = document.querySelector('.container-fluid');
+    container.insertBefore(notification, container.firstChild);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+// Initialize deep learning status on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Load saved recognition mode
+    const savedMode = localStorage.getItem('recognitionMode');
+    if (savedMode) {
+        document.getElementById('recognitionMode').value = savedMode;
+    }
+    
+    // Check deep learning status
+    setTimeout(checkDeepStatus, 1000);  // Delay to avoid race conditions
+});
 </script>
 {% endblock %}

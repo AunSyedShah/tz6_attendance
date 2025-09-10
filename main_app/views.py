@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.conf import settings
 import json
 import logging
+import os
 import cv2
 import numpy as np
 from PIL import Image
@@ -17,7 +18,22 @@ import base64
 
 from .models import Student, EnrollmentImage, EnrollmentSession, AttendanceRecord, AttendanceSession, RecognitionLog
 from .services import face_detection_service
-from .face_recognition_service import face_recognition_service
+
+# Import deep learning face recognition service
+try:
+    from .deep_face_recognition import deep_face_service
+    DEEP_FACE_AVAILABLE = True
+except ImportError:
+    deep_face_service = None
+    DEEP_FACE_AVAILABLE = False
+
+# Import legacy face recognition service conditionally
+try:
+    from .face_recognition_service import face_recognition_service
+    FACE_RECOGNITION_AVAILABLE = True
+except ImportError:
+    face_recognition_service = None
+    FACE_RECOGNITION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -847,4 +863,245 @@ def end_attendance_session(request, session_id):
         return JsonResponse({
             'success': False,
             'error': f'Error ending session: {str(e)}'
+        })
+
+
+# ============================================================================
+# DEEP LEARNING FACE RECOGNITION VIEWS
+# ============================================================================
+
+@require_http_methods(["POST"])
+def verify_deep_installation(request):
+    """Verify deep learning libraries installation"""
+    try:
+        if not DEEP_FACE_AVAILABLE:
+            return JsonResponse({
+                'success': False,
+                'error': 'Deep learning service not available'
+            })
+        
+        status = deep_face_service.verify_installation()
+        
+        return JsonResponse({
+            'success': True,
+            'installation_status': status,
+            'all_installed': all(status.values()),
+            'recommendations': {
+                'deepface': 'pip install deepface' if not status['deepface'] else 'Installed ✓',
+                'tensorflow': 'pip install tensorflow' if not status['tensorflow'] else 'Installed ✓',
+                'torch': 'pip install torch torchvision' if not status['torch'] else 'Installed ✓'
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Installation check failed: {str(e)}'
+        })
+
+
+@require_http_methods(["POST"])
+def train_deep_model(request):
+    """Train deep learning face recognition model for all enrolled students"""
+    try:
+        if not DEEP_FACE_AVAILABLE:
+            return JsonResponse({
+                'success': False,
+                'error': 'Deep learning service not available'
+            })
+        
+        # Get all students with enrollment images
+        students = Student.objects.filter(enrollment_completed=True)
+        
+        if not students.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No enrolled students found'
+            })
+        
+        total_enrolled = 0
+        training_results = []
+        
+        for student in students:
+            images = EnrollmentImage.objects.filter(student=student)
+            if images.exists():
+                # Get image paths
+                image_paths = []
+                for img in images:
+                    if os.path.exists(img.image.path):
+                        image_paths.append(img.image.path)
+                
+                if image_paths:
+                    # Enroll student in deep learning system
+                    success_count = deep_face_service.enroll_student_images(
+                        student.student_id,
+                        student.full_name,
+                        image_paths
+                    )
+                    
+                    training_results.append({
+                        'student_id': student.student_id,
+                        'student_name': student.full_name,
+                        'total_images': len(image_paths),
+                        'successful_embeddings': success_count,
+                        'success_rate': f"{(success_count/len(image_paths)*100):.1f}%"
+                    })
+                    
+                    if success_count > 0:
+                        total_enrolled += 1
+        
+        # Get final statistics
+        stats = deep_face_service.get_enrollment_stats()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Deep learning model training completed',
+            'results': {
+                'students_processed': len(students),
+                'students_enrolled': total_enrolled,
+                'training_details': training_results,
+                'final_stats': stats
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Deep learning training error: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Training failed: {str(e)}'
+        })
+
+
+@require_http_methods(["GET"])
+def deep_model_status(request):
+    """Get deep learning model status and statistics"""
+    try:
+        if not DEEP_FACE_AVAILABLE:
+            return JsonResponse({
+                'success': False,
+                'error': 'Deep learning service not available',
+                'model_ready': False
+            })
+        
+        stats = deep_face_service.get_enrollment_stats()
+        
+        model_ready = stats.get('total_students', 0) > 0 and stats.get('total_embeddings', 0) > 0
+        
+        return JsonResponse({
+            'success': True,
+            'model_ready': model_ready,
+            'statistics': stats,
+            'system_info': {
+                'primary_model': deep_face_service.primary_model,
+                'distance_metric': deep_face_service.distance_metric,
+                'confidence_threshold': deep_face_service.confidence_threshold,
+                'attendance_threshold': deep_face_service.attendance_threshold
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Deep model status error: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Status check failed: {str(e)}',
+            'model_ready': False
+        })
+
+
+@require_http_methods(["POST"])
+def process_frame_deep_recognition(request):
+    """Process camera frame with deep learning face recognition"""
+    try:
+        if not DEEP_FACE_AVAILABLE:
+            return JsonResponse({
+                'success': False,
+                'error': 'Deep learning service not available'
+            })
+        
+        # Get frame data
+        data = json.loads(request.body)
+        frame_data = data.get('frame')
+        
+        if not frame_data:
+            return JsonResponse({
+                'success': False,
+                'error': 'No frame data provided'
+            })
+        
+        # Decode frame
+        try:
+            frame_bytes = base64.b64decode(frame_data.split(',')[1])
+            nparr = np.frombuffer(frame_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid frame data: {str(e)}'
+            })
+        
+        # Face detection first (using existing service)
+        face_detected, face_coords, status_message, confidence_score = face_detection_service.detect_and_validate_face(frame)
+        
+        response_data = {
+            'face_detected': face_detected,
+            'status_message': status_message,
+            'confidence_score': confidence_score,
+            'recognition_result': None
+        }
+        
+        if face_detected and face_coords:
+            # Add face coordinates
+            response_data['face_coordinates'] = {
+                'x': int(face_coords[0]),
+                'y': int(face_coords[1]),
+                'width': int(face_coords[2]),
+                'height': int(face_coords[3])
+            }
+            
+            # Perform deep learning recognition
+            student_id, recognition_confidence, student_name = deep_face_service.recognize_face(frame)
+            
+            if student_id:
+                response_data['recognition_result'] = {
+                    'student_id': student_id,
+                    'student_name': student_name,
+                    'confidence': float(recognition_confidence),
+                    'can_mark_attendance': recognition_confidence >= deep_face_service.attendance_threshold
+                }
+                
+                # Auto-mark attendance if confidence is high enough
+                if recognition_confidence >= deep_face_service.attendance_threshold:
+                    try:
+                        student = Student.objects.get(student_id=student_id)
+                        attendance_record, created = AttendanceRecord.objects.get_or_create(
+                            student=student,
+                            date=timezone.now().date(),
+                            defaults={
+                                'entry_time': timezone.now().time(),
+                                'recognition_confidence': recognition_confidence,
+                                'status': 'present',
+                                'recognition_method': 'deep_learning'
+                            }
+                        )
+                        
+                        if created:
+                            response_data['attendance_marked'] = True
+                            response_data['message'] = f'Attendance marked for {student_name}'
+                        else:
+                            response_data['attendance_marked'] = False
+                            response_data['message'] = f'{student_name} already marked present today'
+                            
+                    except Student.DoesNotExist:
+                        response_data['error'] = f'Student {student_id} not found in database'
+        
+        return JsonResponse({
+            'success': True,
+            **response_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Deep recognition processing error: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Recognition processing failed: {str(e)}'
         })
