@@ -1,0 +1,191 @@
+{% extends 'main_app/base.html' %}
+
+{% block title %}New Student Enrollment - AI Attendance System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card">
+            <div class="card-header text-center">
+                <h4 class="mb-0">
+                    <i class="fas fa-user-plus me-2"></i>
+                    Student Enrollment
+                </h4>
+                <p class="text-light mb-0 mt-2">Enter student information to begin enrollment</p>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" id="enrollmentForm">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="student_name" class="form-label fw-bold">
+                            <i class="fas fa-user me-1"></i>
+                            Student Full Name *
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="student_name" 
+                               name="student_name" 
+                               placeholder="Enter full name (e.g., John Doe)" 
+                               required>
+                        <div class="form-text">Enter the complete name of the student</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="student_id" class="form-label fw-bold">
+                            <i class="fas fa-id-card me-1"></i>
+                            Student ID *
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="student_id" 
+                               name="student_id" 
+                               placeholder="Enter student ID (e.g., ST2024001)" 
+                               pattern="[A-Z0-9]+"
+                               title="Student ID must contain only uppercase letters and numbers"
+                               required>
+                        <div class="form-text">Enter unique student identifier (uppercase letters and numbers only)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="email" class="form-label fw-bold">
+                            <i class="fas fa-envelope me-1"></i>
+                            Email Address
+                        </label>
+                        <input type="email" 
+                               class="form-control" 
+                               id="email" 
+                               name="email" 
+                               placeholder="student@example.com">
+                        <div class="form-text">Optional: Student's email address</div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="phone" class="form-label fw-bold">
+                            <i class="fas fa-phone me-1"></i>
+                            Phone Number
+                        </label>
+                        <input type="tel" 
+                               class="form-control" 
+                               id="phone" 
+                               name="phone" 
+                               placeholder="+1 (555) 123-4567">
+                        <div class="form-text">Optional: Student's contact number</div>
+                    </div>
+                    
+                    <!-- Information Panel -->
+                    <div class="alert alert-info">
+                        <h6 class="fw-bold">
+                            <i class="fas fa-info-circle me-2"></i>
+                            What happens next?
+                        </h6>
+                        <ul class="mb-0">
+                            <li>Student profile will be created</li>
+                            <li>You'll be redirected to the camera enrollment interface</li>
+                            <li>System will capture 100+ face images across different poses</li>
+                            <li>Each session takes approximately 5-10 minutes</li>
+                        </ul>
+                    </div>
+                    
+                    <!-- Enrollment Requirements -->
+                    <div class="card bg-light mb-3">
+                        <div class="card-body">
+                            <h6 class="fw-bold text-primary">
+                                <i class="fas fa-camera me-2"></i>
+                                Camera Requirements
+                            </h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled mb-0">
+                                        <li><i class="fas fa-check text-success me-2"></i>Working webcam required</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Good lighting conditions</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Stable internet connection</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled mb-0">
+                                        <li><i class="fas fa-check text-success me-2"></i>Chrome/Firefox browser</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Camera permissions enabled</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Quiet environment</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-custom btn-lg">
+                            <i class="fas fa-arrow-right me-2"></i>
+                            Create Student & Start Enrollment
+                        </button>
+                        <a href="{% url 'enrollment_dashboard' %}" class="btn btn-outline-secondary btn-custom">
+                            <i class="fas fa-arrow-left me-2"></i>
+                            Back to Dashboard
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Demo Mode Option -->
+        <div class="card mt-3">
+            <div class="card-body text-center">
+                <h6 class="fw-bold text-secondary">
+                    <i class="fas fa-upload me-2"></i>
+                    Alternative: Demo Mode
+                </h6>
+                <p class="text-muted mb-2">
+                    No camera available? You can test the system by uploading pre-captured face images.
+                </p>
+                <small class="text-muted">
+                    Create a student first, then use the "Demo Mode" option from the dashboard.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('enrollmentForm');
+        const studentIdInput = document.getElementById('student_id');
+        
+        // Auto-uppercase student ID
+        studentIdInput.addEventListener('input', function() {
+            this.value = this.value.toUpperCase();
+        });
+        
+        // Form validation
+        form.addEventListener('submit', function(e) {
+            const studentName = document.getElementById('student_name').value.trim();
+            const studentId = document.getElementById('student_id').value.trim();
+            
+            if (!studentName || !studentId) {
+                e.preventDefault();
+                alert('Please fill in both student name and ID.');
+                return;
+            }
+            
+            if (!/^[A-Z0-9]+$/.test(studentId)) {
+                e.preventDefault();
+                alert('Student ID must contain only uppercase letters and numbers.');
+                return;
+            }
+            
+            // Show loading state
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating Student...';
+            submitBtn.disabled = true;
+            
+            // Re-enable button after 10 seconds as fallback
+            setTimeout(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }, 10000);
+        });
+    });
+</script>
+{% endblock %}

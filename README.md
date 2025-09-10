@@ -1,7 +1,244 @@
-# AI Attendance System - Prototype Documentation
+# AI Attendance System - Django Version
 
-## Overview
-This prototype demonstrates the integration of Steps 1, 2, and 3 of the AI Attendance System during the enrollment phase, followed by recognition testing.
+A comprehensive student enrollment system converted from Streamlit to Django, featuring real-time face detection, image capture, and progress tracking.
+
+## 🚀 Features
+
+### Core Functionality
+- **Student Management**: Create, view, and manage student profiles
+- **Live Camera Enrollment**: Real-time face detection and image capture
+- **Demo Mode**: Upload multiple images for testing without camera access
+- **Progress Tracking**: Real-time enrollment progress with visual indicators
+- **Quality Validation**: Automatic face detection with quality metrics
+- **Interactive Prompts**: Guided image capture with 10 different poses/expressions
+
+### Technical Features
+- **Face Detection**: OpenCV-based real-time face detection and validation
+- **Image Processing**: Advanced preprocessing with low-light enhancement
+- **AJAX Integration**: Real-time communication between frontend and backend
+- **Responsive Design**: Bootstrap-based responsive UI
+- **Admin Interface**: Django admin for data management
+- **Database Storage**: SQLite database with comprehensive data models
+
+## 📋 Conversion from Streamlit
+
+This Django application is a complete conversion of the original Streamlit `app.py` with the following improvements:
+
+### Architecture Changes
+| Component | Streamlit | Django |
+|-----------|-----------|--------|
+| **Frontend** | Streamlit widgets | HTML templates with Bootstrap CSS |
+| **Backend** | Session state | Django views and models |
+| **Database** | File system | SQLite with proper models |
+| **Camera Integration** | Direct OpenCV | JavaScript MediaDevices API + AJAX |
+| **Image Storage** | Local files | Django media files with database references |
+| **User Interface** | Streamlit components | Professional web interface |
+
+### Feature Mapping
+- ✅ **StudentEnrollmentSystem class** → Django service (`services.py`)
+- ✅ **Face detection logic** → Maintained with enhanced error handling
+- ✅ **Interactive prompts** → Converted to dynamic web interface
+- ✅ **Progress tracking** → Real-time updates via AJAX
+- ✅ **Demo mode** → Enhanced file upload with validation
+- ✅ **Image preprocessing** → Maintained with Django file handling
+
+## 🛠️ Installation & Setup
+
+### Prerequisites
+- Python 3.8+
+- Webcam (for live enrollment)
+- Modern web browser (Chrome/Firefox recommended)
+
+### Quick Start
+
+1. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run Setup Script**
+   ```bash
+   python setup_django.py
+   ```
+
+3. **Create Superuser** (Optional)
+   ```bash
+   python manage.py createsuperuser
+   ```
+
+4. **Start Development Server**
+   ```bash
+   python manage.py runserver
+   ```
+
+5. **Access Application**
+   - Main Application: http://127.0.0.1:8000/
+   - Admin Interface: http://127.0.0.1:8000/admin/
+
+### Manual Setup (Alternative)
+
+```bash
+# Make migrations
+python manage.py makemigrations
+
+# Apply migrations
+python manage.py migrate
+
+# Collect static files
+python manage.py collectstatic
+
+# Run server
+python manage.py runserver
+```
+
+## 📱 Usage Guide
+
+### 1. Dashboard
+- View all enrolled students
+- Track enrollment statistics
+- Quick access to enrollment functions
+
+### 2. Student Enrollment
+1. Click "New Student" from dashboard
+2. Fill in student information (Name, ID, Email, Phone)
+3. Choose enrollment method:
+   - **Live Camera**: Real-time camera capture
+   - **Demo Mode**: Upload pre-captured images
+
+### 3. Live Camera Enrollment
+1. Grant camera permissions when prompted
+2. Position face in camera view
+3. Follow interactive prompts (10 different poses)
+4. System automatically captures 100+ images
+5. Real-time progress tracking and quality feedback
+
+### 4. Demo Mode
+1. Select multiple face images (JPG/PNG)
+2. Upload and process images
+3. System validates each image for face detection
+4. View success/failure rates
+
+## 🏗️ Project Structure
+
+```
+tz6_attendance/
+├── main_app/                   # Main Django application
+│   ├── models.py              # Student, EnrollmentImage, EnrollmentSession models
+│   ├── views.py               # Web views and API endpoints
+│   ├── services.py            # Face detection service (converted from Streamlit)
+│   ├── admin.py               # Django admin configuration
+│   ├── urls.py                # URL routing
+│   └── templates/             # HTML templates
+│       └── main_app/
+│           ├── base.html      # Base template with Bootstrap
+│           ├── dashboard.html # Main dashboard
+│           ├── enrollment_form.html
+│           ├── enrollment_capture.html  # Live camera interface
+│           ├── demo_enrollment.html     # File upload interface
+│           └── student_detail.html      # Student details view
+├── tz6_attendance/            # Django project settings
+│   ├── settings.py           # Configuration with media/static files
+│   ├── urls.py               # Main URL configuration
+│   └── wsgi.py               # WSGI configuration
+├── static/                   # Static files (CSS, JS)
+├── media/                    # Uploaded images
+├── requirements.txt          # Updated dependencies
+├── setup_django.py          # Setup script
+└── manage.py                 # Django management script
+```
+
+## 🔧 Key Components
+
+### Models (`models.py`)
+- **Student**: Student information and enrollment status
+- **EnrollmentImage**: Individual face images with metadata
+- **EnrollmentSession**: Enrollment session tracking
+
+### Services (`services.py`)
+- **FaceDetectionService**: Core face detection and image processing
+- Converted from original `StudentEnrollmentSystem` class
+- Enhanced error handling and Django integration
+
+### Views (`views.py`)
+- **enrollment_dashboard**: Main dashboard view
+- **enrollment_capture**: Live camera enrollment
+- **demo_enrollment**: File upload enrollment
+- **process_camera_frame**: AJAX endpoint for real-time processing
+
+### Templates
+- **Responsive Bootstrap design**
+- **Real-time camera integration**
+- **Progress tracking with visual indicators**
+- **Professional admin interface**
+
+## 🎯 Key Improvements Over Streamlit
+
+1. **Professional UI**: Bootstrap-based responsive design
+2. **Better Performance**: Optimized database queries and AJAX
+3. **Scalability**: Proper web architecture with separation of concerns
+4. **Data Management**: Comprehensive admin interface
+5. **Security**: CSRF protection and proper file handling
+6. **Deployment Ready**: Standard Django deployment options
+7. **Extensibility**: Easy to add new features and integrations
+
+## 🔐 Security Features
+
+- CSRF protection on all forms
+- File upload validation
+- Input sanitization
+- Secure media file handling
+- Admin interface protection
+
+## 📊 Database Schema
+
+### Student Model
+- student_id (Primary Key)
+- full_name, email, phone
+- enrollment_completed, total_images_captured
+- enrollment_date, is_active
+
+### EnrollmentImage Model
+- Foreign Key to Student
+- Image file with metadata
+- Quality metrics (confidence, brightness, blur)
+- Prompt index and sequence number
+
+### EnrollmentSession Model
+- Session tracking with statistics
+- Success rates and duration
+- Technical metadata (IP, User Agent)
+
+## 🚀 Deployment
+
+The application is ready for deployment using standard Django deployment methods:
+- **Development**: `python manage.py runserver`
+- **Production**: Gunicorn + Nginx
+- **Cloud**: Heroku, AWS, Google Cloud
+- **Docker**: Containerization ready
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Make changes with proper documentation
+4. Test thoroughly
+5. Submit pull request
+
+## 📄 License
+
+This project maintains the same license as the original Streamlit application.
+
+## 🆘 Support
+
+For issues, feature requests, or questions:
+1. Check the Django logs for detailed error information
+2. Verify camera permissions in browser
+3. Ensure all dependencies are installed correctly
+4. Review the setup steps in this README
+
+---
+
+**Migration Complete!** 🎉 Your Streamlit AI Attendance System is now a full-featured Django web application with enhanced functionality and professional UI.
 
 ## System Architecture Integration
 

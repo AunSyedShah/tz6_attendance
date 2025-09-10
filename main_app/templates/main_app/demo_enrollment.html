@@ -1,0 +1,313 @@
+{% extends 'main_app/base.html' %}
+
+{% block title %}Demo Enrollment - {{ student.full_name }} - AI Attendance System{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'enrollment_dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'student_detail' student.student_id %}">{{ student.student_id }}</a></li>
+                <li class="breadcrumb-item active">Demo Enrollment</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<!-- Student Information Header -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h3 class="mb-1">
+                            <i class="fas fa-upload me-2 text-info"></i>
+                            Demo Mode - File Upload
+                        </h3>
+                        <p class="text-muted mb-0">
+                            <strong>Student:</strong> {{ student.full_name }} ({{ student.student_id }})
+                        </p>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <span class="badge bg-info fs-6 px-3 py-2">
+                            <i class="fas fa-images me-1"></i>
+                            {{ progress.total_images }}/100 Images
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if progress.enrollment_completed %}
+    <!-- Enrollment Complete -->
+    <div class="row">
+        <div class="col-12">
+            <div class="enrollment-complete">
+                <i class="fas fa-check-circle fa-4x mb-3"></i>
+                <h2 class="fw-bold">Enrollment Complete!</h2>
+                <p class="fs-5 mb-3">
+                    Successfully processed {{ progress.total_images }} images for {{ student.full_name }}
+                </p>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{% url 'student_detail' student.student_id %}" class="btn btn-light btn-lg">
+                        <i class="fas fa-eye me-2"></i>View Details
+                    </a>
+                    <a href="{% url 'enrollment_dashboard' %}" class="btn btn-outline-light btn-lg">
+                        <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <!-- File Upload Interface -->
+    <div class="row">
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-cloud-upload-alt me-2"></i>
+                        Upload Face Images
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data" id="uploadForm">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="images" class="form-label fw-bold">
+                                Select Face Images (JPG, PNG)
+                            </label>
+                            <input type="file" 
+                                   class="form-control" 
+                                   id="images" 
+                                   name="images" 
+                                   multiple 
+                                   accept="image/jpeg,image/jpg,image/png"
+                                   required>
+                            <div class="form-text">
+                                Select multiple clear face images from different angles. 
+                                Recommended: 10-50 images for good results.
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <h6 class="fw-bold">
+                                <i class="fas fa-lightbulb me-2"></i>
+                                Tips for Best Results:
+                            </h6>
+                            <ul class="mb-0">
+                                <li>Upload clear, well-lit face images</li>
+                                <li>Include different angles and expressions</li>
+                                <li>Ensure only one face per image</li>
+                                <li>Avoid blurry or low-quality images</li>
+                                <li>Face should be clearly visible and centered</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-upload me-2"></i>
+                                Upload and Process Images
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Alternative Options -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="fw-bold text-secondary mb-3">
+                        <i class="fas fa-route me-2"></i>
+                        Alternative Options
+                    </h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-2">
+                            <a href="{% url 'enrollment_capture' student.student_id %}" 
+                               class="btn btn-outline-success w-100">
+                                <i class="fas fa-camera me-2"></i>
+                                Switch to Live Camera
+                            </a>
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <a href="{% url 'student_detail' student.student_id %}" 
+                               class="btn btn-outline-secondary w-100">
+                                <i class="fas fa-arrow-left me-2"></i>
+                                Back to Student Details
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Progress Panel -->
+        <div class="col-lg-4">
+            <!-- Current Progress -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-pie me-2"></i>
+                        Current Progress
+                    </h6>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <div class="fs-1 fw-bold text-primary">
+                            {{ progress.progress_percentage|floatformat:0 }}%
+                        </div>
+                        <div class="progress mb-2">
+                            <div class="progress-bar bg-info" 
+                                 style="width: {{ progress.progress_percentage }}%">
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            {{ progress.total_images }} of 100 images
+                        </small>
+                    </div>
+                    
+                    {% if progress.total_images >= 10 %}
+                        <div class="alert alert-success p-2">
+                            <i class="fas fa-check me-1"></i>
+                            Sufficient for basic training!
+                        </div>
+                    {% elif progress.total_images >= 5 %}
+                        <div class="alert alert-warning p-2">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            More images recommended
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info p-2">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Upload more images for better accuracy
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Upload Guidelines -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-check-circle me-2"></i>
+                        Quality Guidelines
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Clear face visibility
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Good lighting conditions
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Single person per image
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Various angles/expressions
+                        </li>
+                        <li class="mb-0">
+                            <i class="fas fa-check text-success me-2"></i>
+                            High resolution preferred
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('images');
+        
+        // File selection handler
+        fileInput.addEventListener('change', function() {
+            const files = this.files;
+            if (files.length > 0) {
+                console.log(`Selected ${files.length} files`);
+                
+                // Validate file types
+                const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+                const invalidFiles = [];
+                
+                for (let file of files) {
+                    if (!validTypes.includes(file.type)) {
+                        invalidFiles.push(file.name);
+                    }
+                }
+                
+                if (invalidFiles.length > 0) {
+                    alert(`Invalid file types: ${invalidFiles.join(', ')}\nPlease select only JPG or PNG images.`);
+                    this.value = '';
+                    return;
+                }
+                
+                // Check file sizes (max 10MB per file)
+                const maxSize = 10 * 1024 * 1024;
+                const oversizedFiles = [];
+                
+                for (let file of files) {
+                    if (file.size > maxSize) {
+                        oversizedFiles.push(file.name);
+                    }
+                }
+                
+                if (oversizedFiles.length > 0) {
+                    alert(`Files too large: ${oversizedFiles.join(', ')}\nMaximum size per file: 10MB`);
+                    this.value = '';
+                    return;
+                }
+            }
+        });
+        
+        // Form submission handler
+        form.addEventListener('submit', function(e) {
+            const files = fileInput.files;
+            
+            if (files.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one image file.');
+                return;
+            }
+            
+            // Show loading state
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing Images...';
+            submitBtn.disabled = true;
+            
+            // Create progress indicator
+            const progressDiv = document.createElement('div');
+            progressDiv.className = 'alert alert-info mt-3';
+            progressDiv.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span>Uploading and processing ${files.length} images...</span>
+                </div>
+            `;
+            form.appendChild(progressDiv);
+            
+            // Re-enable button after timeout as fallback
+            setTimeout(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                progressDiv.remove();
+            }, 30000);
+        });
+    });
+</script>
+{% endblock %}

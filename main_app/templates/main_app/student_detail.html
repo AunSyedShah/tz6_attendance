@@ -1,0 +1,385 @@
+{% extends 'main_app/base.html' %}
+
+{% block title %}{{ student.full_name }} - Student Details - AI Attendance System{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'enrollment_dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item active">{{ student.student_id }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<!-- Student Information -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h4 class="mb-0">
+                            <i class="fas fa-user me-2"></i>
+                            {{ student.full_name }}
+                        </h4>
+                        <p class="text-light mb-0 mt-1">Student ID: {{ student.student_id }}</p>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        {% if student.enrollment_completed %}
+                            <span class="badge bg-success fs-6 px-3 py-2">
+                                <i class="fas fa-check-circle me-1"></i>Enrollment Complete
+                            </span>
+                        {% else %}
+                            <span class="badge bg-warning fs-6 px-3 py-2">
+                                <i class="fas fa-clock me-1"></i>In Progress
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-2">Student Information</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Full Name:</strong></td>
+                                <td>{{ student.full_name }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Student ID:</strong></td>
+                                <td>{{ student.student_id }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Email:</strong></td>
+                                <td>{{ student.email|default:"Not provided" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Phone:</strong></td>
+                                <td>{{ student.phone|default:"Not provided" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Enrollment Date:</strong></td>
+                                <td>{{ student.enrollment_date|date:"M d, Y H:i" }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-2">Enrollment Statistics</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Total Images:</strong></td>
+                                <td>{{ progress.total_images }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Progress:</strong></td>
+                                <td>{{ progress.progress_percentage|floatformat:1 }}%</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Prompts Completed:</strong></td>
+                                <td>{{ progress.prompts_completed }}/{{ progress.total_prompts }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    {% if student.enrollment_completed %}
+                                        <span class="badge bg-success">Complete</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">In Progress</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Active:</strong></td>
+                                <td>
+                                    {% if student.is_active %}
+                                        <span class="badge bg-success">Yes</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">No</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="btn-group" role="group">
+                            {% if not student.enrollment_completed %}
+                                <a href="{% url 'enrollment_capture' student.student_id %}" 
+                                   class="btn btn-success">
+                                    <i class="fas fa-camera me-2"></i>Continue Camera Enrollment
+                                </a>
+                                <a href="{% url 'demo_enrollment' student.student_id %}" 
+                                   class="btn btn-info">
+                                    <i class="fas fa-upload me-2"></i>Demo Mode
+                                </a>
+                            {% endif %}
+                            <button class="btn btn-warning" onclick="confirmReset()">
+                                <i class="fas fa-redo me-2"></i>Reset Enrollment
+                            </button>
+                            <button class="btn btn-danger" onclick="confirmDelete()">
+                                <i class="fas fa-trash me-2"></i>Delete Student
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Overview -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Enrollment Progress
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold mb-3">Overall Progress</h6>
+                        <div class="progress mb-2" style="height: 25px;">
+                            <div class="progress-bar bg-success" 
+                                 style="width: {{ progress.progress_percentage }}%">
+                                {{ progress.progress_percentage|floatformat:1 }}%
+                            </div>
+                        </div>
+                        <p class="text-muted">{{ progress.total_images }} of 100 images captured</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold mb-3">Prompt Completion</h6>
+                        {% for prompt_idx, prompt_data in progress.prompt_progress.items %}
+                            <div class="d-flex align-items-center mb-2">
+                                <div class="me-2" style="width: 20px;">
+                                    {% if prompt_data.completed %}
+                                        <i class="fas fa-check-circle text-success"></i>
+                                    {% elif prompt_idx == progress.current_prompt_index %}
+                                        <i class="fas fa-clock text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-circle text-muted"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <small>{{ prompt_data.prompt_text|truncatechars:30 }}</small>
+                                    <div class="progress progress-sm">
+                                        <div class="progress-bar" 
+                                             style="width: {{ prompt_data.progress_percentage }}%">
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="text-muted ms-2">
+                                    {{ prompt_data.images_captured }}/{{ prompt_data.target_images }}
+                                </small>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enrollment Sessions -->
+{% if sessions %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>
+                    Enrollment Sessions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Mode</th>
+                                <th>Duration</th>
+                                <th>Attempts</th>
+                                <th>Success Rate</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for session in sessions %}
+                                <tr>
+                                    <td>{{ session.session_start|date:"M d, Y H:i" }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ session.session_mode|yesno:'primary,info' }}">
+                                            {% if session.session_mode == 'live' %}
+                                                <i class="fas fa-camera me-1"></i>Live Camera
+                                            {% else %}
+                                                <i class="fas fa-upload me-1"></i>Demo Upload
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if session.session_end %}
+                                            {{ session.duration }}
+                                        {% else %}
+                                            <span class="text-muted">In progress</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ session.total_attempts }}</td>
+                                    <td>
+                                        {% if session.total_attempts > 0 %}
+                                            {{ session.success_rate|floatformat:1 }}%
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if session.session_completed %}
+                                            <span class="badge bg-success">Complete</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">In Progress</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Enrollment Images Preview -->
+{% if images_by_prompt %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-images me-2"></i>
+                    Captured Images
+                </h5>
+            </div>
+            <div class="card-body">
+                {% for prompt_idx, prompt_data in images_by_prompt.items %}
+                    <h6 class="fw-bold mb-2">
+                        Prompt {{ prompt_idx|add:1 }}: {{ prompt_data.prompt_text }}
+                        <span class="badge bg-secondary ms-2">{{ prompt_data.images|length }} images</span>
+                    </h6>
+                    <div class="row mb-3">
+                        {% for image in prompt_data.images|slice:":8" %}
+                            <div class="col-md-1.5 col-sm-3 col-4 mb-2">
+                                <div class="card">
+                                    <img src="{{ image.image.url }}" 
+                                         class="card-img-top" 
+                                         style="height: 80px; object-fit: cover;"
+                                         alt="Face {{ image.image_sequence }}">
+                                    <div class="card-body p-1">
+                                        <small class="text-muted d-block text-center">
+                                            #{{ image.image_sequence }}
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                        {% if images|length > 8 %}
+                            <div class="col-md-1.5 col-sm-3 col-4 mb-2">
+                                <div class="card bg-light d-flex align-items-center justify-content-center" 
+                                     style="height: 120px;">
+                                    <span class="text-muted">+{{ images|length|add:"-8" }} more</span>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Confirmation Modals -->
+<div class="modal fade" id="resetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                    Confirm Reset
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to reset enrollment data for <strong>{{ student.full_name }}</strong>?</p>
+                <p class="text-warning">
+                    <i class="fas fa-warning me-1"></i>
+                    This will delete all captured images and reset progress to zero.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{% url 'reset_enrollment' student.student_id %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-redo me-1"></i>Reset Enrollment
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle text-danger me-2"></i>
+                    Confirm Deletion
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete student <strong>{{ student.full_name }}</strong>?</p>
+                <p class="text-danger">
+                    <i class="fas fa-warning me-1"></i>
+                    This will permanently delete all student data and images. This action cannot be undone.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{% url 'delete_student' student.student_id %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>Delete Student
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function confirmReset() {
+        const modal = new bootstrap.Modal(document.getElementById('resetModal'));
+        modal.show();
+    }
+
+    function confirmDelete() {
+        const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        modal.show();
+    }
+</script>
+{% endblock %}

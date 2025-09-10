@@ -1,0 +1,751 @@
+{% extends 'main_app/base.html' %}
+{% load attendance_filters %}
+
+{% block title %}Camera Enrollment - {{ student.full_name }} - AI Attendance System{% endblock %}
+
+{% block extra_head %}
+<meta name="csrf-token" content="{{ csrf_token }}">
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    #video-container {
+        position: relative;
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    #videoElement {
+        width: 100%;
+        height: auto;
+        max-height: 500px;
+        object-fit: cover;
+    }
+    
+    .camera-controls {
+        position: absolute;
+        bottom: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+    }
+    
+    .capture-button {
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        border: 4px solid white;
+        background: var(--danger-color);
+        color: white;
+        font-size: 1.5rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    
+    .capture-button:hover {
+        background: #c0392b;
+        transform: scale(1.1);
+    }
+    
+    .capture-button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        transform: none;
+    }
+    
+    .auto-capture-mode .capture-button {
+        background: var(--success-color);
+        animation: pulse-capture 2s infinite;
+    }
+    
+    @keyframes pulse-capture {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); }
+    }
+    
+    .progress-ring {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .progress-ring-circle {
+        transition: stroke-dashoffset 0.35s;
+        transform: rotate(-90deg);
+        transform-origin: 50% 50%;
+    }
+    
+    .enrollment-complete {
+        background: linear-gradient(135deg, var(--success-color), #229954);
+        color: white;
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        animation: celebration 1s ease-in-out;
+    }
+    
+    @keyframes celebration {
+        0% { transform: scale(0.8); opacity: 0; }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); opacity: 1; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'enrollment_dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'student_detail' student.student_id %}">{{ student.student_id }}</a></li>
+                <li class="breadcrumb-item active">Camera Enrollment</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<!-- Student Information Header -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h3 class="mb-1">
+                            <i class="fas fa-camera me-2 text-primary"></i>
+                            Camera Enrollment
+                        </h3>
+                        <p class="text-muted mb-0">
+                            <strong>Student:</strong> {{ student.full_name }} ({{ student.student_id }})
+                        </p>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <span class="badge bg-primary fs-6 px-3 py-2">
+                            <i class="fas fa-images me-1"></i>
+                            {{ progress.total_images }}/{{ target_images_total }} Images
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if progress.enrollment_completed %}
+    <!-- Enrollment Complete -->
+    <div class="row">
+        <div class="col-12">
+            <div class="enrollment-complete">
+                <i class="fas fa-check-circle fa-4x mb-3"></i>
+                <h2 class="fw-bold">Enrollment Complete!</h2>
+                <p class="fs-5 mb-3">
+                    Successfully captured {{ progress.total_images }} images for {{ student.full_name }}
+                </p>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{% url 'student_detail' student.student_id %}" class="btn btn-light btn-lg">
+                        <i class="fas fa-eye me-2"></i>View Details
+                    </a>
+                    <a href="{% url 'enrollment_dashboard' %}" class="btn btn-outline-light btn-lg">
+                        <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <!-- Enrollment in Progress -->
+    <div class="row">
+        <!-- Camera Feed -->
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-video me-2"></i>
+                        Live Camera Feed
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div id="video-container" class="position-relative">
+                        <video id="videoElement" autoplay muted playsinline></video>
+                        
+                        <!-- Status Overlay -->
+                        <div class="status-indicator" id="statusIndicator">
+                            <i class="fas fa-camera me-1"></i>
+                            Initializing camera...
+                        </div>
+                        
+                        <!-- Face Detection Overlay -->
+                        <canvas id="faceCanvas" class="camera-overlay"></canvas>
+                        
+                        <!-- Camera Controls -->
+                        <div class="camera-controls">
+                            <button id="captureBtn" class="capture-button" disabled>
+                                <i class="fas fa-camera"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Camera Error Panel -->
+                    <div id="cameraError" class="alert alert-warning m-3" style="display: none;">
+                        <h6 class="fw-bold">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Camera Access Issue
+                        </h6>
+                        <p class="mb-2">Unable to access your camera. Please check:</p>
+                        <ul class="mb-2">
+                            <li>Camera permissions are enabled for this website</li>
+                            <li>No other applications are using the camera</li>
+                            <li>Your browser supports camera access (Chrome/Firefox recommended)</li>
+                        </ul>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-warning btn-sm" onclick="initializeCamera()">
+                                <i class="fas fa-redo me-1"></i>Retry Camera
+                            </button>
+                            <a href="{% url 'demo_enrollment' student.student_id %}" class="btn btn-info btn-sm">
+                                <i class="fas fa-upload me-1"></i>Use Demo Mode
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Progress and Controls -->
+        <div class="col-lg-4">
+            <!-- Current Prompt -->
+            <div class="prompt-display mb-3" id="promptDisplay">
+                <div class="prompt-text" id="promptText">
+                    {{ progress.current_prompt_text }}
+                </div>
+                <div class="prompt-number" id="promptNumber">
+                    Prompt {{ progress.current_prompt_index|add:1 }} of {{ progress.total_prompts }}
+                </div>
+            </div>
+            
+            <!-- 30 FPS Processing Info -->
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h6 class="mb-0">
+                        <i class="fas fa-video me-2"></i>
+                        Real-Time Processing
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="h5 mb-1 text-primary" id="fpsCounter">30</div>
+                            <small class="text-muted">FPS</small>
+                        </div>
+                        <div class="col-6">
+                            <div class="h5 mb-1 text-success" id="qualityScore">--</div>
+                            <small class="text-muted">Quality</small>
+                        </div>
+                    </div>
+                    <hr class="my-2">
+                    <div class="small">
+                        <div class="d-flex justify-content-between">
+                            <span>Frames Processed:</span>
+                            <span id="frameCount">0</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>Auto-Capture:</span>
+                            <span class="badge bg-success">Active</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Overall Progress -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-line me-2"></i>
+                        Overall Progress
+                    </h6>
+                </div>
+                <div class="card-body text-center">
+                    <div class="progress-ring mx-auto mb-2">
+                        <svg class="progress-ring" width="100" height="100">
+                            <circle class="progress-ring-circle" 
+                                    stroke="#e9ecef" 
+                                    stroke-width="8" 
+                                    fill="transparent" 
+                                    r="42" 
+                                    cx="50" 
+                                    cy="50"/>
+                            <circle class="progress-ring-circle" 
+                                    stroke="#28a745" 
+                                    stroke-width="8" 
+                                    fill="transparent" 
+                                    r="42" 
+                                    cx="50" 
+                                    cy="50"
+                                    stroke-dasharray="264.16"
+                                    stroke-dashoffset="{{ progress.progress_percentage|floatformat:0|stroke_dashoffset }}"
+                                    id="progressCircle"/>
+                        </svg>
+                        <div class="position-absolute top-50 start-50 translate-middle">
+                            <div class="fs-4 fw-bold text-primary" id="progressPercent">
+                                {{ progress.progress_percentage|floatformat:0 }}%
+                            </div>
+                        </div>
+                    </div>
+                    <p class="mb-0">
+                        <span id="totalImages">{{ progress.total_images }}</span> of {{ target_images_total }} images captured
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Prompt Progress -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-tasks me-2"></i>
+                        Prompt Progress
+                    </h6>
+                </div>
+                <div class="card-body p-0">
+                    <div id="promptProgress">
+                        {% for prompt_idx, prompt_data in progress.prompt_progress.items %}
+                            <div class="d-flex align-items-center p-2 border-bottom">
+                                <div class="me-2">
+                                    {% if prompt_data.completed %}
+                                        <i class="fas fa-check-circle text-success"></i>
+                                    {% elif prompt_idx == progress.current_prompt_index %}
+                                        <i class="fas fa-clock text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-circle text-muted"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <small class="text-muted">{{ prompt_data.prompt_text|truncatechars:25 }}</small>
+                                    <div class="progress progress-sm">
+                                        <div class="progress-bar" 
+                                             style="width: {% progress_bar_width prompt_data.images_captured prompt_data.target_images %}%">
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="text-muted ms-2">
+                                    {{ prompt_data.images_captured }}/{{ prompt_data.target_images }}
+                                </small>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Instructions -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Instructions
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Position yourself clearly in front of camera
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Follow the prompts displayed above
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Hold still when face is detected
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            System will auto-capture images
+                        </li>
+                        <li class="mb-0">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Process takes 5-10 minutes
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let videoElement, canvas, ctx;
+    let faceDetectionInterval;
+    let isCapturing = false;
+    let autoCaptureMode = true;
+    
+    const studentId = '{{ student.student_id }}';
+    const targetImages = {{ target_images_total }};
+    const imagesPerPrompt = {{ images_per_prompt }};
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        videoElement = document.getElementById('videoElement');
+        canvas = document.getElementById('faceCanvas');
+        ctx = canvas.getContext('2d');
+        
+        initializeCamera();
+        
+        // Capture button click
+        document.getElementById('captureBtn').addEventListener('click', function() {
+            if (!isCapturing && videoElement.videoWidth > 0) {
+                captureFrame(true);
+            }
+        });
+    });
+    
+    async function initializeCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                } 
+            });
+            
+            videoElement.srcObject = stream;
+            videoElement.onloadedmetadata = function() {
+                // Set canvas size to match video
+                canvas.width = videoElement.videoWidth;
+                canvas.height = videoElement.videoHeight;
+                
+                updateStatus('Camera ready - position your face in the frame', 'success');
+                document.getElementById('captureBtn').disabled = false;
+                document.getElementById('cameraError').style.display = 'none';
+                
+                // Start face detection
+                startFaceDetection();
+            };
+            
+        } catch (error) {
+            console.error('Error accessing camera:', error);
+            updateStatus('Camera access denied', 'error');
+            document.getElementById('cameraError').style.display = 'block';
+        }
+    }
+    
+    // Global variables for 30 FPS processing
+    let frameCounter = 0;
+    let lastCaptureTime = 0;
+    let bestQualityScore = 0;
+    let framesSinceLastCapture = 0;
+    const CAPTURE_COOLDOWN = 1000; // 1 second between captures
+    const QUALITY_THRESHOLD = 85; // Auto-capture if quality >= 85
+    
+    function startFaceDetection() {
+        // Process frames at 30 FPS for real-time face detection
+        faceDetectionInterval = setInterval(() => {
+            if (videoElement.videoWidth > 0) {
+                frameCounter++;
+                framesSinceLastCapture++;
+                captureFrame();
+            }
+        }, 33); // 30 FPS = 1000ms/30 ≈ 33ms per frame
+    }
+    
+    function captureFrame() {
+        // Create canvas to capture video frame
+        const captureCanvas = document.createElement('canvas');
+        captureCanvas.width = videoElement.videoWidth;
+        captureCanvas.height = videoElement.videoHeight;
+        const captureCtx = captureCanvas.getContext('2d');
+        
+        // Draw current video frame
+        captureCtx.drawImage(videoElement, 0, 0);
+        
+        // Convert to base64
+        const imageData = captureCanvas.toDataURL('image/jpeg', 0.8);
+        
+        // Send to server for processing with frame info
+        processFrame(imageData);
+    }
+    
+    async function processFrame(imageData) {
+        try {
+            // Determine if we should capture based on timing and quality
+            const currentTime = Date.now();
+            const shouldCapture = autoCaptureMode && 
+                                (currentTime - lastCaptureTime) > CAPTURE_COOLDOWN &&
+                                framesSinceLastCapture > 30; // At least 1 second of frames
+            
+            const response = await fetch('/api/process-frame/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    student_id: studentId,
+                    image_data: imageData,
+                    capture_image: shouldCapture,
+                    frame_number: frameCounter
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                updateStatus(data.error, 'error');
+                return;
+            }
+            
+            // Update quality tracking and display
+            if (data.quality_metrics && data.quality_metrics.total_score) {
+                const currentQuality = data.quality_metrics.total_score;
+                
+                // Update quality display
+                document.getElementById('qualityScore').textContent = Math.round(currentQuality);
+                
+                // Auto-capture high quality frames
+                if (data.face_detected && currentQuality >= QUALITY_THRESHOLD && 
+                    (currentTime - lastCaptureTime) > CAPTURE_COOLDOWN && !isCapturing) {
+                    
+                    // Trigger immediate capture of high-quality frame
+                    setTimeout(() => {
+                        captureHighQualityFrame(imageData);
+                    }, 50);
+                }
+                
+                bestQualityScore = Math.max(bestQualityScore, currentQuality);
+            }
+            
+            // Update 30 FPS display counters
+            updateFPSDisplay();
+            
+            // Update status with 30 FPS info
+            const fpsInfo = data.fps_info ? ` (${data.fps_info})` : '';
+            updateStatus(data.status_message + fpsInfo, data.face_detected ? 'success' : 'warning');
+            
+            // Draw face rectangle if detected
+            drawFaceRectangle(data.face_coordinates, data.face_detected);
+            
+            // If image was captured successfully
+            if (data.image_captured) {
+                lastCaptureTime = Date.now();
+                framesSinceLastCapture = 0;
+                isCapturing = true;
+                updateStatus('✅ High-quality frame captured from 30 FPS stream!', 'success');
+                
+                // Update progress
+                if (data.enrollment_progress) {
+                    updateProgress(data.enrollment_progress);
+                }
+                
+                // Check if enrollment is complete
+                if (data.enrollment_completed) {
+                    clearInterval(faceDetectionInterval);
+                    showEnrollmentComplete();
+                    return;
+                }
+                
+                // Brief delay before next capture
+                setTimeout(() => {
+                    isCapturing = false;
+                }, 800);
+            }
+            
+        } catch (error) {
+            console.error('Error processing frame:', error);
+            updateStatus('Error processing 30 FPS stream', 'error');
+        }
+    }
+    
+    async function captureHighQualityFrame(imageData) {
+        if (isCapturing) return;
+        
+        try {
+            const response = await fetch('/api/process-frame/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    student_id: studentId,
+                    image_data: imageData,
+                    capture_image: true,
+                    frame_number: frameCounter,
+                    high_quality_capture: true
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.image_captured) {
+                lastCaptureTime = Date.now();
+                framesSinceLastCapture = 0;
+                updateStatus('🌟 Auto-captured high-quality frame!', 'success');
+                
+                if (data.enrollment_progress) {
+                    updateProgress(data.enrollment_progress);
+                }
+                
+                if (data.enrollment_completed) {
+                    clearInterval(faceDetectionInterval);
+                    showEnrollmentComplete();
+                }
+            }
+        } catch (error) {
+            console.error('Error capturing high-quality frame:', error);
+        }
+    }
+    
+    function drawFaceRectangle(coords, detected) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        if (coords) {
+            const [x, y, w, h] = coords;
+            const scaleX = canvas.width / videoElement.videoWidth;
+            const scaleY = canvas.height / videoElement.videoHeight;
+            
+            ctx.strokeStyle = detected ? '#28a745' : '#dc3545';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x * scaleX, y * scaleY, w * scaleX, h * scaleY);
+            
+            // Add confidence indicator
+            if (detected) {
+                ctx.fillStyle = '#28a745';
+                ctx.font = '16px Arial';
+                ctx.fillText('✓ Face Detected', (x * scaleX) + 5, (y * scaleY) - 5);
+            }
+        }
+    }
+    
+    function updateStatus(message, type) {
+        const statusElement = document.getElementById('statusIndicator');
+        statusElement.innerHTML = `<i class="fas fa-${getStatusIcon(type)} me-1"></i>${message}`;
+        statusElement.className = `status-indicator text-${getStatusColor(type)}`;
+    }
+    
+    function getStatusIcon(type) {
+        switch(type) {
+            case 'success': return 'check-circle';
+            case 'warning': return 'exclamation-triangle';
+            case 'error': return 'times-circle';
+            default: return 'camera';
+        }
+    }
+    
+    function getStatusColor(type) {
+        switch(type) {
+            case 'success': return 'success';
+            case 'warning': return 'warning';
+            case 'error': return 'danger';
+            default: return 'info';
+        }
+    }
+    
+    function updateProgress(progress) {
+        // Update overall progress
+        document.getElementById('progressPercent').textContent = Math.round(progress.progress_percentage) + '%';
+        document.getElementById('totalImages').textContent = progress.total_images;
+        
+        // Update progress circle
+        const circle = document.getElementById('progressCircle');
+        const radius = 42;
+        const circumference = 2 * Math.PI * radius;
+        const offset = circumference - (progress.progress_percentage / 100) * circumference;
+        circle.style.strokeDashoffset = offset;
+        
+        // Update current prompt
+        document.getElementById('promptText').textContent = progress.current_prompt_text;
+        document.getElementById('promptNumber').textContent = 
+            `Prompt ${progress.current_prompt_index + 1} of ${progress.total_prompts}`;
+        
+        // Update prompt progress list
+        updatePromptProgress(progress.prompt_progress, progress.current_prompt_index);
+    }
+    
+    function updatePromptProgress(promptProgress, currentIndex) {
+        const container = document.getElementById('promptProgress');
+        container.innerHTML = '';
+        
+        Object.entries(promptProgress).forEach(([index, data]) => {
+            const isActive = parseInt(index) === currentIndex;
+            const progressPercent = (data.images_captured / data.target_images) * 100;
+            
+            const item = document.createElement('div');
+            item.className = 'd-flex align-items-center p-2 border-bottom';
+            item.innerHTML = `
+                <div class="me-2">
+                    ${data.completed ? 
+                        '<i class="fas fa-check-circle text-success"></i>' : 
+                        isActive ? 
+                            '<i class="fas fa-clock text-warning"></i>' : 
+                            '<i class="fas fa-circle text-muted"></i>'
+                    }
+                </div>
+                <div class="flex-grow-1">
+                    <small class="text-muted">${data.prompt_text.substring(0, 25)}...</small>
+                    <div class="progress progress-sm">
+                        <div class="progress-bar ${isActive ? 'bg-warning' : 'bg-success'}" 
+                             style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
+                <small class="text-muted ms-2">${data.images_captured}/${data.target_images}</small>
+            `;
+            container.appendChild(item);
+        });
+    }
+    
+    function showEnrollmentComplete() {
+        window.location.reload(); // Reload to show completion screen
+    }
+    
+    function updateFPSDisplay() {
+        // Update frame counter
+        document.getElementById('frameCount').textContent = frameCounter;
+        
+        // Calculate and display current FPS (approximate)
+        const now = Date.now();
+        if (!window.lastFPSUpdate) {
+            window.lastFPSUpdate = now;
+            window.framesSinceLastUpdate = 0;
+        }
+        
+        window.framesSinceLastUpdate++;
+        
+        // Update FPS display every second
+        if (now - window.lastFPSUpdate >= 1000) {
+            const actualFPS = Math.round(window.framesSinceLastUpdate);
+            document.getElementById('fpsCounter').textContent = actualFPS;
+            
+            // Reset counters
+            window.lastFPSUpdate = now;
+            window.framesSinceLastUpdate = 0;
+        }
+    }
+    
+    function getCsrfToken() {
+        const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (csrfElement) {
+            return csrfElement.value;
+        }
+        // Fallback to meta tag if input not found
+        const metaCsrf = document.querySelector('meta[name="csrf-token"]');
+        if (metaCsrf) {
+            return metaCsrf.getAttribute('content');
+        }
+        console.error('CSRF token not found');
+        return '';
+    }
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (faceDetectionInterval) {
+            clearInterval(faceDetectionInterval);
+        }
+        if (videoElement && videoElement.srcObject) {
+            videoElement.srcObject.getTracks().forEach(track => track.stop());
+        }
+    });
+</script>
+{% endblock %}

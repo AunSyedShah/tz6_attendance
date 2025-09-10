@@ -1,0 +1,284 @@
+{% extends 'main_app/base.html' %}
+
+{% block title %}Dashboard - AI Attendance System{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h2 mb-3">
+            <i class="fas fa-tachometer-alt me-2 text-primary"></i>
+            Enrollment Dashboard
+        </h1>
+        <p class="text-muted">Manage student enrollments and track progress</p>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center">
+                <i class="fas fa-users fa-2x mb-2"></i>
+                <h3 class="fw-bold">{{ stats.total_students }}</h3>
+                <p class="mb-0">Total Students</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center">
+                <i class="fas fa-check-circle fa-2x mb-2"></i>
+                <h3 class="fw-bold">{{ stats.completed_enrollments }}</h3>
+                <p class="mb-0">Completed</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center">
+                <i class="fas fa-user-check fa-2x mb-2"></i>
+                <h3 class="fw-bold">{{ stats.active_students }}</h3>
+                <p class="mb-0">Active Students</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card">
+            <div class="card-body text-center">
+                <i class="fas fa-camera fa-2x mb-2"></i>
+                <h3 class="fw-bold">{{ stats.total_images }}</h3>
+                <p class="mb-0">Total Images</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>
+                    Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <a href="{% url 'student_enrollment_form' %}" class="btn btn-primary btn-custom w-100">
+                            <i class="fas fa-user-plus me-2"></i>
+                            Enroll New Student
+                        </a>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <button class="btn btn-outline-secondary btn-custom w-100" onclick="window.location.reload()">
+                            <i class="fas fa-sync-alt me-2"></i>
+                            Refresh Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Students List -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>
+                    Students
+                </h5>
+                <span class="badge bg-primary">{{ page_obj.paginator.count }} Total</span>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-id-card me-1"></i>Student ID</th>
+                                    <th><i class="fas fa-user me-1"></i>Name</th>
+                                    <th><i class="fas fa-calendar me-1"></i>Enrollment Date</th>
+                                    <th><i class="fas fa-images me-1"></i>Images</th>
+                                    <th><i class="fas fa-chart-line me-1"></i>Progress</th>
+                                    <th><i class="fas fa-check-circle me-1"></i>Status</th>
+                                    <th><i class="fas fa-cogs me-1"></i>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for student in page_obj %}
+                                    <tr>
+                                        <td>
+                                            <span class="fw-bold text-primary">{{ student.student_id }}</span>
+                                        </td>
+                                        <td>{{ student.full_name }}</td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ student.enrollment_date|date:"M d, Y H:i" }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-info">{{ student.image_count }} images</span>
+                                        </td>
+                                        <td>
+                                            <div class="progress" style="width: 100px;">
+                                                <div class="progress-bar bg-success" 
+                                                     style="width: {{ student.progress_percentage }}%">
+                                                </div>
+                                            </div>
+                                            <small class="text-muted">{{ student.total_images_captured }}/100</small>
+                                        </td>
+                                        <td>
+                                            {% if student.enrollment_completed %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check me-1"></i>Complete
+                                                </span>
+                                            {% elif student.total_images_captured > 0 %}
+                                                <span class="badge bg-warning">
+                                                    <i class="fas fa-clock me-1"></i>In Progress
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">
+                                                    <i class="fas fa-play me-1"></i>Not Started
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <a href="{% url 'student_detail' student.student_id %}" 
+                                                   class="btn btn-outline-primary" title="View Details">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                {% if not student.enrollment_completed %}
+                                                    <a href="{% url 'enrollment_capture' student.student_id %}" 
+                                                       class="btn btn-outline-success" title="Continue Enrollment">
+                                                        <i class="fas fa-camera"></i>
+                                                    </a>
+                                                    <a href="{% url 'demo_enrollment' student.student_id %}" 
+                                                       class="btn btn-outline-info" title="Demo Mode">
+                                                        <i class="fas fa-upload"></i>
+                                                    </a>
+                                                {% endif %}
+                                                <button class="btn btn-outline-danger" 
+                                                        onclick="confirmDelete('{{ student.student_id }}', '{{ student.full_name }}')" 
+                                                        title="Delete Student">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if page_obj.has_other_pages %}
+                        <nav class="mt-3">
+                            <ul class="pagination justify-content-center">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1">&laquo; First</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                                    </li>
+                                {% endif %}
+
+                                {% for page_num in page_obj.paginator.page_range %}
+                                    {% if page_num == page_obj.number %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ page_num }}</span>
+                                        </li>
+                                    {% else %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No students enrolled yet</h5>
+                        <p class="text-muted">Start by enrolling your first student</p>
+                        <a href="{% url 'student_enrollment_form' %}" class="btn btn-primary btn-custom">
+                            <i class="fas fa-user-plus me-2"></i>
+                            Enroll First Student
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                    Confirm Deletion
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete student <strong id="deleteName"></strong>?</p>
+                <p class="text-danger">
+                    <i class="fas fa-warning me-1"></i>
+                    This will permanently delete all enrollment data and images.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="post" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>
+                        Delete Student
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function confirmDelete(studentId, studentName) {
+        document.getElementById('deleteName').textContent = studentName;
+        document.getElementById('deleteForm').action = `/students/${studentId}/delete/`;
+        
+        const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        modal.show();
+    }
+
+    // Auto-refresh dashboard every 30 seconds
+    let autoRefresh = setInterval(() => {
+        window.location.reload();
+    }, 30000);
+
+    // Stop auto-refresh when user interacts with the page
+    document.addEventListener('click', () => {
+        clearInterval(autoRefresh);
+    });
+</script>
+{% endblock %}
