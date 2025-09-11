@@ -33,8 +33,13 @@ def cleanup_cameras_on_shutdown(signum, frame):
 
 
 # Setup signal handlers for server shutdown
-signal.signal(signal.SIGTERM, cleanup_cameras_on_shutdown)
-signal.signal(signal.SIGINT, cleanup_cameras_on_shutdown)
+try:
+    signal.signal(signal.SIGTERM, cleanup_cameras_on_shutdown)
+    signal.signal(signal.SIGINT, cleanup_cameras_on_shutdown)
+    logger.info("Camera cleanup signal handlers registered")
+except ValueError as e:
+    logger.warning(f"Could not register camera cleanup signal handlers: {e}")
+    # This is expected when not in main thread
 
 
 @receiver(pre_delete, sender=Student)

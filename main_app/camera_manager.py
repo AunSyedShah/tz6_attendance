@@ -37,22 +37,35 @@ class CameraManager:
         self.active_cameras: Dict[str, cv2.VideoCapture] = {}
         self.session_cameras: Dict[str, str] = {}  # session_id -> camera_id mapping
         self._lock = threading.Lock()
-        self._setup_cleanup_handlers()
+        self._signal_handlers_registered = False
+        self._setup_basic_cleanup_handlers()
         self._initialized = True
         
         logger.info("CameraManager initialized")
     
-    def _setup_cleanup_handlers(self):
-        """Setup various cleanup handlers for different shutdown scenarios"""
+    def _setup_basic_cleanup_handlers(self):
+        """Setup basic cleanup handlers that don't require main thread"""
         # Handle normal Python exit
         atexit.register(self.cleanup_all_cameras)
         
-        # Handle system signals
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        
         # Handle Django request completion
         request_finished.connect(self._cleanup_session_cameras)
+    
+    def _setup_signal_handlers(self):
+        """Setup signal handlers - must be called from main thread"""
+        if self._signal_handlers_registered:
+            return
+            
+        try:
+            # Handle system signals (only works in main thread)
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            self._signal_handlers_registered = True
+            logger.info("Signal handlers registered successfully")
+        except ValueError as e:
+            logger.warning(f"Could not register signal handlers: {e}")
+            # This is expected when not in main thread
+            pass
     
     def _signal_handler(self, signum, frame):
         """Handle system signals for graceful shutdown"""
@@ -197,7 +210,10 @@ camera_manager = CameraManager()
 
 def get_camera_manager() -> CameraManager:
     """Get the global camera manager instance"""
-    return camera_manager
+    manager = camera_manager
+    # Try to register signal handlers if we're in the main thread
+    manager._setup_signal_handlers()
+    return manager
 
 
 # Django management command helper
