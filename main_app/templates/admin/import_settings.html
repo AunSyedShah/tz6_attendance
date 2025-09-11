@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Import Settings{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h2>Import System Settings</h2>
+    
+    <div class="form-row">
+        <div class="description">
+            <p>Upload a JSON file containing system settings to import. This will overwrite existing settings with the same keys.</p>
+            <p><strong>Warning:</strong> This action cannot be undone. Consider exporting current settings as a backup first.</p>
+        </div>
+    </div>
+    
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="form-row">
+            <label for="settings_file">Settings File (JSON):</label>
+            <input type="file" name="settings_file" id="settings_file" accept=".json" required>
+        </div>
+        
+        <div class="submit-row">
+            <input type="submit" value="Import Settings" class="default">
+            <a href="{% url 'admin:main_app_systemconfiguration_changelist' %}" class="button">Cancel</a>
+        </div>
+    </form>
+    
+    <div class="help">
+        <h3>Import Format</h3>
+        <p>The JSON file should contain settings in the following format:</p>
+        <pre>{
+  "SETTING_KEY": {
+    "value": "setting_value",
+    "name": "Human Readable Name",
+    "category": "Category",
+    "description": "Setting description",
+    "type": "STRING|INTEGER|FLOAT|BOOLEAN|JSON"
+  }
+}</pre>
+    </div>
+</div>
+{% endblock %}

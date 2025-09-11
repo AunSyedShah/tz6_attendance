@@ -381,28 +381,20 @@
     let faceDetectionInterval;
     let isCapturing = false;
     let autoCaptureMode = true;
+    let cameraStream = null;
+    let isPageUnloading = false;
     
     const studentId = '{{ student.student_id }}';
     const targetImages = {{ target_images_total }};
     const imagesPerPrompt = {{ images_per_prompt }};
     
-    document.addEventListener('DOMContentLoaded', function() {
-        videoElement = document.getElementById('videoElement');
-        canvas = document.getElementById('faceCanvas');
-        ctx = canvas.getContext('2d');
-        
-        initializeCamera();
-        
-        // Capture button click
-        document.getElementById('captureBtn').addEventListener('click', function() {
-            if (!isCapturing && videoElement.videoWidth > 0) {
-                captureFrame(true);
-            }
-        });
-    });
-    
     async function initializeCamera() {
         try {
+            // Clean up any existing camera stream first
+            if (cameraStream) {
+                stopCameraStream();
+            }
+            
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     width: { ideal: 640 },
@@ -411,6 +403,7 @@
                 } 
             });
             
+            cameraStream = stream;
             videoElement.srcObject = stream;
             videoElement.onloadedmetadata = function() {
                 // Set canvas size to match video
@@ -737,6 +730,174 @@
         console.error('CSRF token not found');
         return '';
     }
+    
+    function stopCameraStream() {
+        console.log('Stopping camera stream...');
+        
+        try {
+            // Stop face detection interval
+            if (faceDetectionInterval) {
+                clearInterval(faceDetectionInterval);
+                faceDetectionInterval = null;
+                console.log('Face detection interval cleared');
+            }
+            
+            // Stop all media tracks from the main stream
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log(`Track ${track.kind} stopped`);
+                });
+                cameraStream = null;
+            }
+            
+            // Also stop tracks from video element (backup cleanup)
+            if (videoElement && videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => {
+                    track.stop();
+                    console.log(`Video track ${track.kind} stopped`);
+                });
+                videoElement.srcObject = null;
+            }
+            
+            // Reset capture states
+            isCapturing = false;
+            
+            // Notify server about camera cleanup
+            notifyServerCameraCleanup('manual_stop');
+            
+            updateStatus('Camera stopped', 'info');
+            console.log('Camera stream stopped successfully');
+            
+        } catch (error) {
+            console.error('Error stopping camera stream:', error);
+        }
+    }
+    
+    async function notifyServerCameraCleanup(reason = 'page_unload') {
+        try {
+            const response = await fetch('/api/camera/cleanup/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    session_id: generateSessionId(),
+                    reason: reason
+                })
+            });
+            
+            if (response.ok) {
+                console.log(`Server notified of camera cleanup: ${reason}`);
+            }
+        } catch (error) {
+            console.error('Error notifying server of camera cleanup:', error);
+        }
+    }
+    
+    function generateSessionId() {
+        // Generate a simple session ID for this camera session
+        if (!window.cameraSessionId) {
+            window.cameraSessionId = 'camera_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        return window.cameraSessionId;
+    }
+    
+    // Enhanced cleanup handlers for multiple scenarios
+    function setupCleanupHandlers() {
+        // Page unload (tab close, browser close, navigation away)
+        window.addEventListener('beforeunload', function(event) {
+            console.log('Page unloading - cleaning up camera');
+            isPageUnloading = true;
+            stopCameraStream();
+            notifyServerCameraCleanup('page_unload');
+        });
+        
+        // Page visibility change (tab switch, minimize)
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                console.log('Page hidden - pausing camera processing');
+                if (faceDetectionInterval) {
+                    clearInterval(faceDetectionInterval);
+                    faceDetectionInterval = null;
+                }
+            } else if (!isPageUnloading && cameraStream) {
+                console.log('Page visible - resuming camera processing');
+                if (!faceDetectionInterval) {
+                    startFaceDetection();
+                }
+            }
+        });
+        
+        // Window focus/blur events
+        window.addEventListener('blur', function() {
+            console.log('Window lost focus - pausing face detection');
+            if (faceDetectionInterval) {
+                clearInterval(faceDetectionInterval);
+                faceDetectionInterval = null;
+            }
+        });
+        
+        window.addEventListener('focus', function() {
+            if (!isPageUnloading && cameraStream && !faceDetectionInterval) {
+                console.log('Window gained focus - resuming face detection');
+                startFaceDetection();
+            }
+        });
+        
+        // Handle page refresh/navigation
+        window.addEventListener('pagehide', function() {
+            console.log('Page hiding - cleaning up camera');
+            stopCameraStream();
+            notifyServerCameraCleanup('page_hide');
+        });
+        
+        // Keyboard shortcut for manual camera stop (Ctrl+Shift+C)
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.shiftKey && event.key === 'C') {
+                console.log('Manual camera stop triggered');
+                stopCameraStream();
+                updateStatus('Camera manually stopped (Ctrl+Shift+C)', 'warning');
+                event.preventDefault();
+            }
+        });
+        
+        // Handle browser/tab crash scenarios with periodic heartbeat
+        setInterval(function() {
+            if (cameraStream && !isPageUnloading) {
+                // Send periodic heartbeat to keep session alive
+                fetch('/api/camera/status/')
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Camera heartbeat:', data);
+                    })
+                    .catch(error => {
+                        console.log('Camera heartbeat failed:', error);
+                    });
+            }
+        }, 30000); // Every 30 seconds
+    }
+    
+    // Enhanced DOM content loaded handler
+    document.addEventListener('DOMContentLoaded', function() {
+        videoElement = document.getElementById('videoElement');
+        canvas = document.getElementById('faceCanvas');
+        ctx = canvas.getContext('2d');
+        
+        // Setup all cleanup handlers
+        setupCleanupHandlers();
+        
+        // Initialize camera
+        initializeCamera();
+        
+        // Capture button click
+        document.getElementById('captureBtn').addEventListener('click', function() {
+            if (!isCapturing && videoElement.videoWidth > 0) {
+                captureFrame(true);
+            }
+        });
+    });
     
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {

@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import config_views
 
 urlpatterns = [
     # Dashboard
@@ -34,4 +35,12 @@ urlpatterns = [
     path('attendance/', views.attendance_dashboard, name='attendance_dashboard'),
     path('api/attendance/start-session/', views.start_attendance_session, name='start_attendance_session'),
     path('api/attendance/end-session/<int:session_id>/', views.end_attendance_session, name='end_attendance_session'),
+    
+    # Configuration Management
+    path('admin/config-status/', config_views.configuration_status, name='configuration_status'),
+    path('api/reload-configuration/', config_views.api_reload_configuration, name='api_reload_configuration'),
+    
+    # Camera Resource Management
+    path('api/camera/cleanup/', views.cleanup_camera_resources, name='cleanup_camera_resources'),
+    path('api/camera/status/', views.camera_status, name='camera_status'),
 ]

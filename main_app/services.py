@@ -26,17 +26,8 @@ class FaceDetectionService:
         # Initialize face detector
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         
-        # Get settings from Django configuration
-        enrollment_settings = getattr(settings, 'ENROLLMENT_SETTINGS', {})
-        self.target_images_total = enrollment_settings.get('TARGET_IMAGES_TOTAL', 100)
-        self.images_per_prompt = enrollment_settings.get('IMAGES_PER_PROMPT', 15)
-        self.face_size_threshold = enrollment_settings.get('FACE_SIZE_THRESHOLD', (50, 50))
-        self.image_size = enrollment_settings.get('IMAGE_SIZE', (128, 128))
-        self.blur_threshold = enrollment_settings.get('BLUR_THRESHOLD', 80)
-        self.brightness_range = enrollment_settings.get('BRIGHTNESS_RANGE', (15, 230))
-        self.low_light_threshold = enrollment_settings.get('LOW_LIGHT_THRESHOLD', 50)
-        self.auto_capture_delay = enrollment_settings.get('AUTO_CAPTURE_DELAY', 0.8)
-        self.quality_threshold = enrollment_settings.get('QUALITY_THRESHOLD', 85)
+        # Load configuration dynamically
+        self._load_configuration()
         
         # Optimized prompts for faster, comprehensive face capture
         # Reduced from 10 to 7 prompts covering essential angles
@@ -49,6 +40,53 @@ class FaceDetectionService:
             "Tilt your head slightly left, then right",
             "Final pose: natural smile at camera"
         ]
+    
+    def _load_configuration(self):
+        """Load configuration from dynamic settings or fallback to Django settings"""
+        try:
+            from .config_service import config_service
+            # Use dynamic configuration service
+            enrollment_settings = config_service.get_enrollment_settings()
+            performance_settings = config_service.get_performance_settings()
+            
+            self.target_images_total = enrollment_settings['TARGET_IMAGES_TOTAL']
+            self.images_per_prompt = enrollment_settings['IMAGES_PER_PROMPT']
+            self.face_size_threshold = enrollment_settings['FACE_SIZE_THRESHOLD']
+            self.image_size = enrollment_settings['IMAGE_SIZE']
+            self.blur_threshold = enrollment_settings['BLUR_THRESHOLD']
+            self.brightness_range = enrollment_settings['BRIGHTNESS_RANGE']
+            self.low_light_threshold = enrollment_settings['LOW_LIGHT_THRESHOLD']
+            
+            # Performance settings
+            self.fps_target = performance_settings['CAMERA_FPS']
+            self.processing_timeout = performance_settings['PROCESSING_TIMEOUT']
+            
+            # Derived settings
+            self.auto_capture_delay = 0.8
+            self.quality_threshold = 85
+            
+            logger.info("Loaded dynamic configuration successfully")
+            
+        except Exception as e:
+            logger.warning(f"Failed to load dynamic configuration: {str(e)}, using Django settings")
+            # Fallback to Django configuration
+            enrollment_settings = getattr(settings, 'ENROLLMENT_SETTINGS', {})
+            self.target_images_total = enrollment_settings.get('TARGET_IMAGES_TOTAL', 100)
+            self.images_per_prompt = enrollment_settings.get('IMAGES_PER_PROMPT', 15)
+            self.face_size_threshold = enrollment_settings.get('FACE_SIZE_THRESHOLD', (50, 50))
+            self.image_size = enrollment_settings.get('IMAGE_SIZE', (128, 128))
+            self.blur_threshold = enrollment_settings.get('BLUR_THRESHOLD', 80)
+            self.brightness_range = enrollment_settings.get('BRIGHTNESS_RANGE', (15, 230))
+            self.low_light_threshold = enrollment_settings.get('LOW_LIGHT_THRESHOLD', 50)
+            self.auto_capture_delay = enrollment_settings.get('AUTO_CAPTURE_DELAY', 0.8)
+            self.quality_threshold = enrollment_settings.get('QUALITY_THRESHOLD', 85)
+            self.fps_target = 30
+            self.processing_timeout = 30
+    
+    def reload_configuration(self):
+        """Reload configuration from dynamic settings"""
+        self._load_configuration()
+        logger.info("Configuration reloaded")
     
     def enhance_face_image(self, face_region, target_size=None):
         """
@@ -239,40 +277,50 @@ class FaceDetectionService:
         if frame is None:
             return False, None, "❌ Invalid frame received", 0, {}
         
-        # Step 3: Image Pre-Processing for 30 FPS stream
-        # Apply real-time preprocessing optimized for video frames
-        preprocessed_frame = self.preprocess_frame_30fps(frame)
-        
-        # Use preprocessed frame for face detection
-        gray = preprocessed_frame
-        
-        # Enhanced face detection with optimized parameters for 30 FPS
-        faces = self.face_cascade.detectMultiScale(
-            gray, 
-            scaleFactor=1.05,  # Smaller scale factor for better detection
-            minNeighbors=6,    # Increased for more stable detection
-            minSize=self.face_size_threshold,
-            flags=cv2.CASCADE_SCALE_IMAGE | cv2.CASCADE_DO_CANNY_PRUNING
-        )
+        try:
+            # Step 3: Image Pre-Processing for 30 FPS stream
+            # Apply real-time preprocessing optimized for video frames
+            preprocessed_frame = self.preprocess_frame_30fps(frame)
+            
+            # Use preprocessed frame for face detection
+            gray = preprocessed_frame
+            
+            # Enhanced face detection with optimized parameters for 30 FPS
+            faces = self.face_cascade.detectMultiScale(
+                gray, 
+                scaleFactor=1.05,  # Smaller scale factor for better detection
+                minNeighbors=6,    # Increased for more stable detection
+                minSize=self.face_size_threshold,
+                flags=cv2.CASCADE_SCALE_IMAGE | cv2.CASCADE_DO_CANNY_PRUNING
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in 30 FPS face detection: {str(e)}")
+            return False, None, f"❌ Face detection error: {str(e)}", 0, {}
         
         if len(faces) == 0:
             return False, None, "❌ No face detected - please position yourself in front of camera", 0, {}
         elif len(faces) > 1:
             return False, None, "❌ Multiple faces detected - ensure only one person is visible", 0, {}
         
-        # Get the detected face
-        (x, y, w, h) = faces[0]
-        # Convert NumPy types to native Python types for JSON serialization
-        x, y, w, h = int(x), int(y), int(w), int(h)
-        face_region = gray[y:y+h, x:x+w]
-        
-        # Calculate comprehensive quality score
-        quality_score, quality_metrics = self.calculate_face_quality_score(
-            face_region, x, y, w, h, frame.shape
-        )
-        
-        # Enhanced preprocessing for the detected face
-        enhanced_face = self.enhance_face_image(face_region)
+        try:
+            # Get the detected face
+            (x, y, w, h) = faces[0]
+            # Convert NumPy types to native Python types for JSON serialization
+            x, y, w, h = int(x), int(y), int(w), int(h)
+            face_region = gray[y:y+h, x:x+w]
+            
+            # Calculate comprehensive quality score
+            quality_score, quality_metrics = self.calculate_face_quality_score(
+                face_region, x, y, w, h, frame.shape
+            )
+            
+            # Enhanced preprocessing for the detected face
+            enhanced_face = self.enhance_face_image(face_region)
+            
+        except Exception as e:
+            logger.error(f"Error in 30 FPS face validation: {str(e)}")
+            return False, None, f"❌ Face validation error: {str(e)}", 0, {}
         
         # Quality threshold check
         if quality_score < self.quality_threshold:
@@ -337,33 +385,41 @@ class FaceDetectionService:
     def preprocess_frame_30fps(self, frame):
         """
         Step 3: Image Pre-Processing for 30 FPS video stream
-        Optimized for real-time processing of video frames
+        Optimized for real-time processing of video frames with error handling
         """
-        # Convert to grayscale immediately for faster processing
-        if len(frame.shape) == 3:
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            gray_frame = frame
+        try:
+            # Convert to grayscale immediately for faster processing
+            if len(frame.shape) == 3:
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            else:
+                gray_frame = frame
+                
+            # Apply basic enhancement for better face detection
+            # 1. Histogram equalization for contrast improvement
+            enhanced_frame = cv2.equalizeHist(gray_frame)
             
-        # Apply basic enhancement for better face detection
-        # 1. Histogram equalization for contrast improvement
-        enhanced_frame = cv2.equalizeHist(gray_frame)
-        
-        # 2. Gaussian blur to reduce noise (light filtering for speed)
-        enhanced_frame = cv2.GaussianBlur(enhanced_frame, (3, 3), 0)
-        
-        # 3. Check lighting conditions and apply adaptive enhancement
-        brightness = np.mean(enhanced_frame)
-        
-        if brightness < 80:  # Low light conditions
-            # Apply CLAHE for low-light enhancement
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4,4))
-            enhanced_frame = clahe.apply(enhanced_frame)
-        elif brightness > 200:  # High light conditions
-            # Reduce brightness slightly
-            enhanced_frame = np.clip(enhanced_frame * 0.9, 0, 255).astype(np.uint8)
+            # 2. Gaussian blur to reduce noise (light filtering for speed)
+            enhanced_frame = cv2.GaussianBlur(enhanced_frame, (3, 3), 0)
             
-        return enhanced_frame
+            # 3. Check lighting conditions and apply adaptive enhancement
+            brightness = np.mean(enhanced_frame)
+            
+            if brightness < 80:  # Low light conditions
+                # Apply CLAHE for low-light enhancement
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4,4))
+                enhanced_frame = clahe.apply(enhanced_frame)
+            elif brightness > 200:  # High light conditions
+                # Reduce brightness slightly
+                enhanced_frame = np.clip(enhanced_frame * 0.9, 0, 255).astype(np.uint8)
+                
+            return enhanced_frame
+            
+        except Exception as e:
+            logger.error(f"Error in 30 FPS preprocessing: {str(e)}")
+            # Return original frame as grayscale if preprocessing fails
+            if len(frame.shape) == 3:
+                return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            return frame
 
     def preprocess_face_image(self, frame, face_coords):
         """

@@ -1,0 +1,130 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Delete Students Confirmation{% endblock %}
+
+{% block extrahead %}
+<style>
+.warning-box {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 5px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.danger-box {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 5px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.student-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin: 10px 0;
+}
+
+.student-item {
+    padding: 5px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.stat-card {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    text-align: center;
+}
+
+.stat-number {
+    font-size: 2em;
+    font-weight: bold;
+    color: #dc3545;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h2>Delete Students and Associated Files</h2>
+    
+    <div class="danger-box">
+        <h3>⚠️ WARNING: This action cannot be undone!</h3>
+        <p>You are about to delete <strong>{{ total_students }}</strong> student(s) and all their associated files.</p>
+    </div>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">{{ total_students }}</div>
+            <div>Student{{ total_students|pluralize }} to Delete</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ total_images }}</div>
+            <div>Image File{{ total_images|pluralize }} to Delete</div>
+        </div>
+    </div>
+    
+    <div class="warning-box">
+        <h4>What will be deleted:</h4>
+        <ul>
+            <li><strong>Student records:</strong> All student information from the database</li>
+            <li><strong>Enrollment images:</strong> All captured face images ({{ total_images }} files)</li>
+            <li><strong>Enrollment directories:</strong> Student-specific folders and their contents</li>
+            <li><strong>Deep learning data:</strong> Face embeddings and recognition data</li>
+            <li><strong>Attendance records:</strong> All attendance history for these students</li>
+        </ul>
+    </div>
+    
+    <h3>Students to be deleted:</h3>
+    <div class="student-list">
+        {% for student in students %}
+        <div class="student-item">
+            <strong>{{ student.student_id }}</strong> - {{ student.full_name }}
+            <span style="color: #666;">({{ student.enrollment_images.count }} images)</span>
+        </div>
+        {% empty %}
+        <div class="student-item">No students selected</div>
+        {% endfor %}
+    </div>
+    
+    <form method="post">
+        {% csrf_token %}
+        {% for obj in students %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">
+        {% endfor %}
+        <input type="hidden" name="action" value="delete_selected_with_files">
+        <input type="hidden" name="post" value="yes">
+        
+        <div class="submit-row">
+            <input type="submit" value="Yes, I'm sure - Delete Everything" class="default" style="background-color: #dc3545; color: white;">
+            <a href="{% url 'admin:main_app_student_changelist' %}" class="button">Cancel</a>
+        </div>
+    </form>
+    
+    <div class="help">
+        <h4>File Cleanup Details:</h4>
+        <p>This deletion process will:</p>
+        <ol>
+            <li>Delete all enrollment image files from disk</li>
+            <li>Remove student enrollment directories</li>
+            <li>Clean up face embeddings from deep learning database</li>
+            <li>Clear any cached recognition data</li>
+            <li>Remove all database records related to these students</li>
+        </ol>
+        <p><strong>Tip:</strong> Consider using the "Export" feature to backup student data before deletion.</p>
+    </div>
+</div>
+{% endblock %}

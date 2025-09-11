@@ -1,0 +1,38 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Reset Settings{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h2>Reset All Settings to Default Values</h2>
+    
+    <div class="form-row">
+        <div class="description">
+            <p><strong>Warning:</strong> This action will reset ALL system settings to their default values.</p>
+            <p>This action cannot be undone. Consider exporting current settings as a backup first.</p>
+        </div>
+    </div>
+    
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-row">
+            <p>Are you sure you want to reset all settings to their default values?</p>
+        </div>
+        
+        <div class="submit-row">
+            <input type="submit" value="Reset All Settings" class="default" style="background-color: #dc3545;">
+            <a href="{% url 'admin:main_app_systemconfiguration_changelist' %}" class="button">Cancel</a>
+        </div>
+    </form>
+    
+    <div class="help">
+        <h3>What will be reset:</h3>
+        <ul>
+            <li>All setting values will be reverted to their default values</li>
+            <li>Setting cache will be cleared</li>
+            <li>Settings that require restart will be marked for attention</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

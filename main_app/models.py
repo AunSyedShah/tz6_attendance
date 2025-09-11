@@ -1,7 +1,12 @@
 from django.db import models
 from django.core.validators import RegexValidator
 from django.utils import timezone
+from django.conf import settings
 import os
+import shutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Student(models.Model):
@@ -39,6 +44,69 @@ class Student(models.Model):
         clean_name = "".join(c for c in self.full_name if c.isalnum() or c in (' ', '-', '_')).strip()
         clean_name = clean_name.replace(' ', '_')
         return f"enrollment_data/{self.student_id}_{clean_name}"
+    
+    def delete(self, *args, **kwargs):
+        """Delete student and all associated files/directories"""
+        try:
+            # 1. Delete all enrollment images (this will trigger their individual delete methods)
+            enrollment_images = self.enrollment_images.all()
+            image_count = enrollment_images.count()
+            
+            logger.info(f"Deleting student {self.student_id} with {image_count} images")
+            
+            # Delete each enrollment image (triggers file deletion)
+            for image in enrollment_images:
+                try:
+                    image.delete()
+                except Exception as e:
+                    logger.error(f"Error deleting image {image.id}: {str(e)}")
+            
+            # 2. Delete enrollment directory if it exists
+            enrollment_dir = os.path.join(settings.MEDIA_ROOT, self.get_enrollment_directory())
+            if os.path.exists(enrollment_dir):
+                try:
+                    shutil.rmtree(enrollment_dir)
+                    logger.info(f"Deleted enrollment directory: {enrollment_dir}")
+                except Exception as e:
+                    logger.error(f"Error deleting directory {enrollment_dir}: {str(e)}")
+            
+            # 3. Delete from deep learning database if exists
+            try:
+                from .deep_face_recognition import deep_face_service
+                if hasattr(deep_face_service, 'embeddings_db'):
+                    import sqlite3
+                    conn = sqlite3.connect(deep_face_service.embeddings_db)
+                    cursor = conn.cursor()
+                    
+                    # Delete embeddings for this student
+                    cursor.execute('DELETE FROM face_embeddings WHERE student_id = ?', (self.student_id,))
+                    cursor.execute('DELETE FROM students_deep WHERE student_id = ?', (self.student_id,))
+                    
+                    deleted_embeddings = cursor.rowcount
+                    conn.commit()
+                    conn.close()
+                    
+                    if deleted_embeddings > 0:
+                        logger.info(f"Deleted {deleted_embeddings} face embeddings for student {self.student_id}")
+                        
+            except Exception as e:
+                logger.error(f"Error deleting deep learning data for student {self.student_id}: {str(e)}")
+            
+            # 4. Clear any cached recognition data
+            try:
+                from .config_service import config_service
+                config_service.clear_cache()
+            except Exception as e:
+                logger.warning(f"Could not clear config cache: {str(e)}")
+            
+            logger.info(f"Successfully deleted student {self.student_id} and all associated data")
+            
+        except Exception as e:
+            logger.error(f"Error during student deletion {self.student_id}: {str(e)}")
+            # Continue with deletion even if cleanup fails
+        
+        # Finally, delete the student record
+        super().delete(*args, **kwargs)
 
 
 class EnrollmentImage(models.Model):
@@ -74,9 +142,28 @@ class EnrollmentImage(models.Model):
     
     def delete(self, *args, **kwargs):
         """Delete the image file when the model instance is deleted"""
-        if self.image:
-            if os.path.isfile(self.image.path):
-                os.remove(self.image.path)
+        try:
+            if self.image:
+                # Get the full file path
+                file_path = self.image.path
+                
+                # Delete the physical file
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    logger.info(f"Deleted image file: {file_path}")
+                
+                # Also try to delete from default storage (in case of cloud storage)
+                try:
+                    from django.core.files.storage import default_storage
+                    if default_storage.exists(self.image.name):
+                        default_storage.delete(self.image.name)
+                except Exception as e:
+                    logger.warning(f"Could not delete from storage: {str(e)}")
+                    
+        except Exception as e:
+            logger.error(f"Error deleting image file for EnrollmentImage {self.id}: {str(e)}")
+        
+        # Delete the database record
         super().delete(*args, **kwargs)
 
 
@@ -291,3 +378,115 @@ class RecognitionLog(models.Model):
     def __str__(self):
         student_name = self.student.full_name if self.student else "Unknown"
         return f"{student_name} - {self.recognition_time.strftime('%H:%M:%S')} - {self.confidence_score:.2f}"
+
+
+class SystemConfiguration(models.Model):
+    """Model to store dynamic system configuration settings"""
+    
+    SETTING_TYPES = [
+        ('INTEGER', 'Integer'),
+        ('FLOAT', 'Float'),
+        ('STRING', 'String'),
+        ('BOOLEAN', 'Boolean'),
+        ('JSON', 'JSON'),
+    ]
+    
+    # Configuration identity
+    key = models.CharField(max_length=100, unique=True, help_text="Unique setting key")
+    name = models.CharField(max_length=200, help_text="Human-readable setting name")
+    description = models.TextField(help_text="Description of what this setting controls")
+    category = models.CharField(max_length=50, default='General', help_text="Setting category for grouping")
+    
+    # Value storage
+    setting_type = models.CharField(max_length=10, choices=SETTING_TYPES, default='STRING')
+    value = models.TextField(help_text="Setting value (stored as text, converted by type)")
+    default_value = models.TextField(help_text="Default value for this setting")
+    
+    # Validation
+    min_value = models.FloatField(null=True, blank=True, help_text="Minimum value (for numeric types)")
+    max_value = models.FloatField(null=True, blank=True, help_text="Maximum value (for numeric types)")
+    validation_regex = models.CharField(max_length=500, blank=True, help_text="Regex for value validation")
+    
+    # Metadata
+    is_active = models.BooleanField(default=True)
+    requires_restart = models.BooleanField(default=False, help_text="Does changing this setting require a restart?")
+    last_modified = models.DateTimeField(auto_now=True)
+    last_modified_by = models.CharField(max_length=100, blank=True)
+    
+    class Meta:
+        ordering = ['category', 'name']
+        verbose_name = 'System Configuration'
+        verbose_name_plural = 'System Configuration'
+    
+    def __str__(self):
+        return f"{self.category} - {self.name}"
+    
+    def get_value(self):
+        """Convert stored value to appropriate Python type"""
+        if not self.value:
+            return self.get_default_value()
+            
+        try:
+            if self.setting_type == 'INTEGER':
+                return int(self.value)
+            elif self.setting_type == 'FLOAT':
+                return float(self.value)
+            elif self.setting_type == 'BOOLEAN':
+                return self.value.lower() in ('true', '1', 'yes', 'on')
+            elif self.setting_type == 'JSON':
+                import json
+                return json.loads(self.value)
+            else:  # STRING
+                return self.value
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return self.get_default_value()
+    
+    def get_default_value(self):
+        """Convert default value to appropriate Python type"""
+        try:
+            if self.setting_type == 'INTEGER':
+                return int(self.default_value)
+            elif self.setting_type == 'FLOAT':
+                return float(self.default_value)
+            elif self.setting_type == 'BOOLEAN':
+                return self.default_value.lower() in ('true', '1', 'yes', 'on')
+            elif self.setting_type == 'JSON':
+                import json
+                return json.loads(self.default_value)
+            else:  # STRING
+                return self.default_value
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return None
+    
+    def set_value(self, new_value, modified_by=None):
+        """Set new value with validation"""
+        # Convert to string for storage
+        if self.setting_type == 'JSON':
+            import json
+            self.value = json.dumps(new_value)
+        else:
+            self.value = str(new_value)
+            
+        if modified_by:
+            self.last_modified_by = modified_by
+            
+        self.save()
+    
+    @classmethod
+    def get_setting(cls, key, default=None):
+        """Get a setting value by key"""
+        try:
+            setting = cls.objects.get(key=key, is_active=True)
+            return setting.get_value()
+        except cls.DoesNotExist:
+            return default
+    
+    @classmethod
+    def set_setting(cls, key, value, modified_by=None):
+        """Set a setting value by key"""
+        try:
+            setting = cls.objects.get(key=key)
+            setting.set_value(value, modified_by)
+            return True
+        except cls.DoesNotExist:
+            return False

@@ -1,0 +1,222 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Configuration Status{% endblock %}
+
+{% block extrahead %}
+<style>
+.config-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.config-card {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.config-card h3 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 2px solid #007cba;
+    padding-bottom: 10px;
+}
+
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.setting-key {
+    font-family: monospace;
+    font-weight: bold;
+    color: #666;
+}
+
+.setting-value {
+    background: #f8f9fa;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-box {
+    text-align: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007cba;
+}
+
+.stat-number {
+    font-size: 2em;
+    font-weight: bold;
+    color: #007cba;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.reload-button {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 10px 5px;
+}
+
+.reload-button:hover {
+    background: #218838;
+}
+
+.error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 20px 0;
+}
+
+.success-message {
+    background: #d4edda;
+    color: #155724;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 20px 0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h2>System Configuration Status</h2>
+    
+    {% if error %}
+    <div class="error-message">
+        <strong>Configuration Error:</strong> {{ error }}
+        <br><small>Dynamic configuration may not be available. Check database and migration status.</small>
+    </div>
+    {% else %}
+    
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-number">{{ total_settings }}</div>
+            <div class="stat-label">Total Settings</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{{ active_settings }}</div>
+            <div class="stat-label">Active Settings</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{{ categories|length }}</div>
+            <div class="stat-label">Categories</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">{% if has_dynamic_config %}✓{% else %}✗{% endif %}</div>
+            <div class="stat-label">Dynamic Config</div>
+        </div>
+    </div>
+    
+    <div class="form-row">
+        <button class="reload-button" onclick="reloadConfiguration()">Reload Configuration</button>
+        <a href="{% url 'admin:main_app_systemconfiguration_changelist' %}" class="button default">Manage Settings</a>
+        <a href="{% url 'admin:main_app_systemconfiguration_preview_settings' %}" class="button">Preview Settings</a>
+    </div>
+    
+    <div class="config-dashboard">
+        {% for category, settings in all_settings.items %}
+        <div class="config-card">
+            <h3>{{ category|title }} Settings</h3>
+            {% for key, value in settings.items %}
+            <div class="setting-item">
+                <span class="setting-key">{{ key }}</span>
+                <span class="setting-value">
+                    {% if value == True %}
+                        <span style="color: green;">✓ True</span>
+                    {% elif value == False %}
+                        <span style="color: red;">✗ False</span>
+                    {% else %}
+                        {{ value }}
+                    {% endif %}
+                </span>
+            </div>
+            {% empty %}
+            <p><em>No settings in this category</em></p>
+            {% endfor %}
+        </div>
+        {% empty %}
+        <div class="config-card">
+            <h3>No Configuration Found</h3>
+            <p>No dynamic configuration settings are available.</p>
+            <p><a href="{% url 'admin:main_app_systemconfiguration_add' %}">Add your first setting</a></p>
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% endif %}
+</div>
+
+<script>
+function reloadConfiguration() {
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = 'Reloading...';
+    
+    fetch('/api/reload-configuration/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage('Configuration reloaded successfully', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showMessage('Failed to reload configuration: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        showMessage('Error: ' + error.message, 'error');
+    })
+    .finally(() => {
+        button.disabled = false;
+        button.textContent = 'Reload Configuration';
+    });
+}
+
+function showMessage(message, type) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = type + '-message';
+    messageDiv.textContent = message;
+    
+    const content = document.querySelector('.module');
+    content.insertBefore(messageDiv, content.firstChild);
+    
+    setTimeout(() => messageDiv.remove(), 5000);
+}
+</script>
+
+{% csrf_token %}
+{% endblock %}

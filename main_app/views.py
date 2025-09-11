@@ -15,9 +15,13 @@ import numpy as np
 from PIL import Image
 import io
 import base64
+import time
+from typing import Optional, Dict, Any
 
 from .models import Student, EnrollmentImage, EnrollmentSession, AttendanceRecord, AttendanceSession, RecognitionLog
 from .services import face_detection_service
+from .config_service import config_service
+from .camera_manager import get_camera_manager
 
 # Import deep learning face recognition service
 try:
@@ -162,9 +166,11 @@ def enrollment_capture(request, student_id):
 def process_camera_frame(request):
     """
     Process camera frame for face detection and capture
-    Optimized for 30 FPS video stream processing
+    Optimized for 30 FPS video stream processing with error handling
     Enhanced with optional face recognition for attendance
     """
+    
+    start_time = time.time()
     
     try:
         data = json.loads(request.body)
@@ -179,19 +185,55 @@ def process_camera_frame(request):
 
         student = get_object_or_404(Student, student_id=student_id)
         
+        # Rate limiting for 30 FPS - skip processing if system is overloaded
+        processing_timeout = config_service.get_setting('PROCESSING_TIMEOUT', 30)
+        
         # For 30 FPS optimization: Process every frame for face detection,
         # but only capture high-quality frames when requested
-        frame = face_detection_service.process_image_from_base64(image_data)
-        if frame is None:
-            return JsonResponse({'error': 'Invalid image data'}, status=400)
+        try:
+            frame = face_detection_service.process_image_from_base64(image_data)
+            if frame is None:
+                return JsonResponse({
+                    'error': 'Invalid image data', 
+                    'frame_number': frame_number,
+                    'processing_time': time.time() - start_time
+                }, status=400)
+        except Exception as e:
+            logger.error(f"Error processing 30 FPS stream - frame decode failed: {str(e)}")
+            return JsonResponse({
+                'error': f'Frame decode error: {str(e)}', 
+                'frame_number': frame_number,
+                'processing_time': time.time() - start_time
+            }, status=500)
 
         # Step 1: Capturing Video Frames (30 FPS)
-        # Convert to grayscale for processing efficiency
-        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        try:
+            # Convert to grayscale for processing efficiency
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        except Exception as e:
+            logger.error(f"Error processing 30 FPS stream - grayscale conversion failed: {str(e)}")
+            return JsonResponse({
+                'error': f'Grayscale conversion error: {str(e)}',
+                'frame_number': frame_number,
+                'processing_time': time.time() - start_time
+            }, status=500)
         
         # Step 2: Face Detection - Real-time face detection on every frame
-        face_detected, face_coords, status_msg, confidence, quality_metrics = \
-            face_detection_service.detect_and_validate_face(frame)
+        try:
+            face_detected, face_coords, status_msg, confidence, quality_metrics = \
+                face_detection_service.detect_and_validate_face(frame)
+        except Exception as e:
+            logger.error(f"Error processing 30 FPS stream - face detection failed: {str(e)}")
+            return JsonResponse({
+                'error': f'Face detection error: {str(e)}',
+                'frame_number': frame_number,
+                'processing_time': time.time() - start_time,
+                'fps_info': '30 FPS Processing - Detection Error'
+            }, status=500)
+        
+        processing_time = time.time() - start_time
+        fps_target = config_service.get_setting('CAMERA_FPS', 30)
+        expected_frame_time = 1.0 / fps_target  # ~0.033 seconds for 30 FPS
         
         response_data = {
             'face_detected': face_detected,
@@ -200,8 +242,15 @@ def process_camera_frame(request):
             'face_coordinates': face_coords,
             'quality_metrics': quality_metrics,
             'frame_number': frame_number,
-            'fps_info': '30 FPS Processing Active'
+            'processing_time': round(processing_time * 1000, 2),  # ms
+            'fps_info': f'{fps_target} FPS Processing Active',
+            'performance_warning': processing_time > expected_frame_time * 2,  # Warning if too slow
         }
+        
+        # Performance monitoring for 30 FPS
+        if processing_time > expected_frame_time * 1.5:
+            logger.warning(f"30 FPS processing slow: {processing_time:.3f}s for frame {frame_number}")
+            response_data['fps_warning'] = f"Processing slower than {fps_target} FPS target"
         
         # Optional: Face Recognition for attendance (if recognition_mode is enabled)
         if recognition_mode and face_detected and frame is not None:
@@ -247,6 +296,8 @@ def process_camera_frame(request):
         
         # If face is detected and capture is requested
         if face_detected and capture_image and face_coords:
+            capture_start_time = time.time()
+            
             try:
                 # Get current enrollment progress
                 progress = face_detection_service.get_enrollment_progress(student)
@@ -263,50 +314,79 @@ def process_camera_frame(request):
                     return JsonResponse(make_json_serializable({
                         **response_data,
                         'prompt_complete': True,
-                        'message': 'Current prompt completed, moving to next...'
+                        'message': 'Current prompt completed, moving to next...',
+                        'capture_time': round((time.time() - capture_start_time) * 1000, 2)
                     }))
                 
-                # Process and save image
-                processed_image = face_detection_service.preprocess_face_image(frame, face_coords)
+                # Process and save image with error handling
+                try:
+                    processed_image = face_detection_service.preprocess_face_image(frame, face_coords)
+                except Exception as e:
+                    logger.error(f"Error processing 30 FPS stream - image preprocessing failed: {str(e)}")
+                    return JsonResponse({
+                        'error': f'Image preprocessing error: {str(e)}',
+                        'frame_number': frame_number,
+                        'processing_time': time.time() - start_time
+                    }, status=500)
                 
                 # Generate unique sequence number using current timestamp microseconds
-                import time
                 unique_sequence = int((time.time() * 1000000) % 100000)  # Use microseconds for uniqueness
                 
-                # Save to database (no unique constraint issues now)
-                enrollment_image = face_detection_service.save_processed_image(
-                    processed_image=processed_image,
-                    student=student,
-                    prompt_index=current_prompt_index,
-                    image_sequence=unique_sequence,
-                    face_coords=face_coords,
-                    quality_metrics=quality_metrics,
-                    capture_mode='live'
-                )
+                # Save to database with error handling
+                try:
+                    enrollment_image = face_detection_service.save_processed_image(
+                        processed_image=processed_image,
+                        student=student,
+                        prompt_index=current_prompt_index,
+                        image_sequence=unique_sequence,
+                        face_coords=face_coords,
+                        quality_metrics=quality_metrics,
+                        capture_mode='live'
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing 30 FPS stream - database save failed: {str(e)}")
+                    return JsonResponse({
+                        'error': f'Database save error: {str(e)}',
+                        'frame_number': frame_number,
+                        'processing_time': time.time() - start_time
+                    }, status=500)
                 
+                # Update student's total image count with error handling
+                try:
+                    student.total_images_captured = EnrollmentImage.objects.filter(student=student).count()
+                    
+                    # Check if enrollment is complete
+                    if student.total_images_captured >= face_detection_service.target_images_total:
+                        student.enrollment_completed = True
+                    
+                    student.save()
+                except Exception as e:
+                    logger.error(f"Error processing 30 FPS stream - student update failed: {str(e)}")
+                    # Continue processing even if student update fails
                 
-                # Update student's total image count
-                student.total_images_captured = EnrollmentImage.objects.filter(student=student).count()
+                # Update session statistics with error handling
+                try:
+                    session = EnrollmentSession.objects.filter(
+                        student=student,
+                        session_completed=False
+                    ).first()
+                    
+                    if session:
+                        session.successful_captures += 1
+                        session.total_attempts += 1
+                        session.save()
+                except Exception as e:
+                    logger.error(f"Error processing 30 FPS stream - session update failed: {str(e)}")
+                    # Continue processing even if session update fails
                 
-                # Check if enrollment is complete
-                if student.total_images_captured >= face_detection_service.target_images_total:
-                    student.enrollment_completed = True
+                # Get updated progress with error handling
+                try:
+                    updated_progress = face_detection_service.get_enrollment_progress(student)
+                except Exception as e:
+                    logger.error(f"Error processing 30 FPS stream - progress update failed: {str(e)}")
+                    updated_progress = progress  # Use old progress if update fails
                 
-                student.save()
-                
-                # Update session statistics
-                session = EnrollmentSession.objects.filter(
-                    student=student,
-                    session_completed=False
-                ).first()
-                
-                if session:
-                    session.successful_captures += 1
-                    session.total_attempts += 1
-                    session.save()
-                
-                # Get updated progress
-                updated_progress = face_detection_service.get_enrollment_progress(student)
+                capture_time = time.time() - capture_start_time
                 
                 response_data.update({
                     'image_captured': True,
@@ -314,28 +394,64 @@ def process_camera_frame(request):
                     'total_images': student.total_images_captured,
                     'enrollment_progress': updated_progress,
                     'enrollment_completed': student.enrollment_completed,
+                    'capture_time': round(capture_time * 1000, 2),  # ms
+                    'capture_performance_ok': capture_time < 0.1,  # Capture should be under 100ms
                 })
                 
+                # Warn about slow capture performance
+                if capture_time > 0.2:  # 200ms is too slow for 30 FPS
+                    logger.warning(f"30 FPS capture slow: {capture_time:.3f}s for frame {frame_number}")
+                    response_data['capture_warning'] = "Image capture slower than recommended for 30 FPS"
+                
             except Exception as e:
-                logger.error(f"Error saving image: {str(e)}")
+                logger.error(f"Error processing 30 FPS stream - image capture failed: {str(e)}")
                 response_data['error'] = f"Failed to save image: {str(e)}"
+                response_data['capture_failed'] = True
                 
                 # Update session with failed capture
-                session = EnrollmentSession.objects.filter(
-                    student=student,
-                    session_completed=False
-                ).first()
-                
-                if session:
-                    session.failed_captures += 1
-                    session.total_attempts += 1
-                    session.save()
+                try:
+                    session = EnrollmentSession.objects.filter(
+                        student=student,
+                        session_completed=False
+                    ).first()
+                    
+                    if session:
+                        session.failed_captures += 1
+                        session.total_attempts += 1
+                        session.save()
+                except Exception as session_error:
+                    logger.error(f"Error updating session after capture failure: {str(session_error)}")
+        
+        # Final response with performance metrics
+        total_processing_time = time.time() - start_time
+        response_data['total_processing_time'] = round(total_processing_time * 1000, 2)
+        
+        # Performance assessment
+        if total_processing_time > expected_frame_time * 3:  # 3x slower than target
+            response_data['performance_status'] = 'poor'
+            response_data['performance_message'] = f"Processing too slow for {fps_target} FPS"
+        elif total_processing_time > expected_frame_time * 1.5:
+            response_data['performance_status'] = 'warning'
+            response_data['performance_message'] = f"Processing slower than {fps_target} FPS target"
+        else:
+            response_data['performance_status'] = 'good'
         
         return JsonResponse(make_json_serializable(response_data))
         
+    except json.JSONDecodeError as e:
+        logger.error(f"Error processing 30 FPS stream - JSON decode error: {str(e)}")
+        return JsonResponse({
+            'error': f'Invalid JSON data: {str(e)}',
+            'frame_number': data.get('frame_number', 0) if 'data' in locals() else 0
+        }, status=400)
+        
     except Exception as e:
-        logger.error(f"Error processing camera frame: {str(e)}")
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error(f"Error processing 30 FPS stream - unexpected error: {str(e)}")
+        return JsonResponse({
+            'error': f'Unexpected error: {str(e)}',
+            'frame_number': data.get('frame_number', 0) if 'data' in locals() else 0,
+            'processing_time': (time.time() - start_time) * 1000 if 'start_time' in locals() else 0
+        }, status=500)
 
 
 @require_http_methods(["GET"])
@@ -1105,3 +1221,59 @@ def process_frame_deep_recognition(request):
             'success': False,
             'error': f'Recognition processing failed: {str(e)}'
         })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def cleanup_camera_resources(request):
+    """
+    Manual camera cleanup endpoint
+    Called when user manually stops camera or leaves page
+    """
+    try:
+        data = json.loads(request.body)
+        session_id = data.get('session_id')
+        reason = data.get('reason', 'manual_cleanup')
+        
+        camera_manager = get_camera_manager()
+        
+        if session_id:
+            # Clean up specific session camera
+            success = camera_manager.release_session_camera(session_id)
+            if success:
+                logger.info(f"Camera cleaned up for session {session_id}, reason: {reason}")
+                return JsonResponse({'success': True, 'message': 'Camera cleaned up for session'})
+            else:
+                logger.warning(f"No camera found for session {session_id}")
+                return JsonResponse({'success': True, 'message': 'No camera to clean up'})
+        else:
+            # Clean up all cameras
+            camera_manager.cleanup_all_cameras()
+            logger.info(f"All cameras cleaned up, reason: {reason}")
+            return JsonResponse({'success': True, 'message': 'All cameras cleaned up'})
+            
+    except Exception as e:
+        logger.error(f"Error in camera cleanup: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def camera_status(request):
+    """
+    Get status of active cameras
+    """
+    try:
+        camera_manager = get_camera_manager()
+        active_cameras = camera_manager.get_active_cameras()
+        
+        status = {
+            'active_cameras': len(active_cameras),
+            'camera_ids': list(active_cameras.keys()),
+            'timestamp': timezone.now().isoformat()
+        }
+        
+        return JsonResponse(status)
+        
+    except Exception as e:
+        logger.error(f"Error getting camera status: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)

@@ -61,6 +61,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'main_app.middleware.DynamicConfigurationMiddleware',
+    'main_app.middleware.FrameProcessingRateLimitMiddleware',
 ]
 
 ROOT_URLCONF = 'tz6_attendance.urls'
@@ -150,17 +152,18 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
 ]
 
-# File upload settings
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+# File upload settings (Dynamic - see admin panel for configuration)
+# These are defaults, actual values are managed in SystemConfiguration
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB (managed dynamically)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB (managed dynamically)
 
-# Enrollment settings
-ENROLLMENT_SETTINGS = {
-    'TARGET_IMAGES_TOTAL': 100,
-    'IMAGES_PER_PROMPT': 15,
-    'FACE_SIZE_THRESHOLD': (50, 50),
-    'IMAGE_SIZE': (128, 128),
-    'BLUR_THRESHOLD': 80,
-    'BRIGHTNESS_RANGE': (15, 230),
-    'LOW_LIGHT_THRESHOLD': 50,
-}
+# Admin configuration message
+ADMIN_CONFIG_MESSAGE = """
+System configuration is now managed dynamically through the admin panel.
+Visit /admin/main_app/systemconfiguration/ to modify:
+- File upload limits
+- Enrollment settings  
+- Image quality thresholds
+- Face recognition parameters
+- Performance settings
+"""

@@ -1,0 +1,131 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Settings Preview{% endblock %}
+
+{% block extrahead %}
+<style>
+.settings-category {
+    margin-bottom: 30px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.category-header {
+    background-color: #f8f9fa;
+    padding: 10px 15px;
+    border-bottom: 1px solid #ddd;
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.settings-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.settings-table th,
+.settings-table td {
+    padding: 8px 15px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.settings-table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+}
+
+.setting-key {
+    font-family: monospace;
+    background-color: #f8f9fa;
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+.setting-value {
+    font-family: monospace;
+    background-color: #e9ecef;
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+.json-value {
+    white-space: pre-wrap;
+    font-size: 0.9em;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h2>System Settings Preview</h2>
+    
+    <div class="form-row">
+        <div class="description">
+            <p>Current system configuration grouped by category. Values shown are the actual parsed values used by the system.</p>
+        </div>
+    </div>
+    
+    {% for category, category_settings in settings.items %}
+    <div class="settings-category">
+        <div class="category-header">
+            {{ category|title }} Settings
+        </div>
+        
+        <table class="settings-table">
+            <thead>
+                <tr>
+                    <th>Setting</th>
+                    <th>Current Value</th>
+                    <th>Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, value in category_settings.items %}
+                <tr>
+                    <td><span class="setting-key">{{ key }}</span></td>
+                    <td>
+                        {% if value|length_is:"2" and value.0|add:0 == value.0 %}
+                            <span class="setting-value">({{ value.0 }}, {{ value.1 }})</span>
+                        {% elif value == True %}
+                            <span class="setting-value" style="color: green;">✓ True</span>
+                        {% elif value == False %}
+                            <span class="setting-value" style="color: red;">✗ False</span>
+                        {% else %}
+                            <span class="setting-value">{{ value }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if value == True or value == False %}
+                            Boolean
+                        {% elif value|floatformat:0 != value|floatformat %}
+                            Float
+                        {% elif value|add:0 == value %}
+                            Integer
+                        {% else %}
+                            String
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="3"><em>No settings in this category</em></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% empty %}
+    <div class="settings-category">
+        <div class="category-header">No Settings Found</div>
+        <p>No configuration settings are currently available.</p>
+    </div>
+    {% endfor %}
+    
+    <div class="submit-row">
+        <a href="{% url 'admin:main_app_systemconfiguration_changelist' %}" class="button">Back to Settings</a>
+        <a href="{% url 'admin:main_app_systemconfiguration_export_settings' %}" class="button default">Export Settings</a>
+    </div>
+</div>
+{% endblock %}
